@@ -4,21 +4,24 @@
 const express = require('express');
 const cors = require('cors');
 const app = express();
-const PORT = 3000;
+
+// ★ポート番号を環境変数 'PORT' から取得する（Renderなどのデプロイ環境で必須）
+const PORT = process.env.PORT || 3000; 
 
 // ミドルウェアの設定
-// ★重要: フロントエンドとバックエンドが異なるポートで動くためCORSを許可
+// どこからのアクセスも許可する (開発/簡易デプロイ用)
 app.use(cors()); 
-app.use(express.json()); // JSON形式のリクエストボディを解析
+// JSON形式のリクエストボディを解析できるようにする
+app.use(express.json()); 
 
 // --- ★仮のデータベース (メモリ内) ---
-// サーバーを再起動するとデータはリセットされます
 let players = []; 
 let nextPlayerId = 1;
 
 // ----------------------------------------------------
-// 1. 認証/登録API (簡略版: ニックネームのみで登録/識別)
+// 1. 認証/登録API: POST /api/player/register
 // ----------------------------------------------------
+// ニックネームを受け取り、プレイヤーを登録または識別する
 app.post('/api/player/register', (req, res) => {
     const { nickname } = req.body;
     if (!nickname) {
@@ -42,7 +45,7 @@ app.post('/api/player/register', (req, res) => {
         console.log(`既存プレイヤー識別: ID${player.id}, ${nickname}`);
     }
 
-    // プレイヤーIDと現在のスコアをフロントエンドに返す
+    // プレイヤーIDと現在のスコアをフロントエンドに返し、同期させる
     res.json({ 
         message: "プレイヤー情報取得成功",
         player: {
@@ -56,10 +59,10 @@ app.post('/api/player/register', (req, res) => {
 
 
 // ----------------------------------------------------
-// 2. スコア更新API
+// 2. スコア更新API: POST /api/score/update
 // ----------------------------------------------------
+// プレイヤーIDとクリアしたモードを受け取り、スコアを1点加算する
 app.post('/api/score/update', (req, res) => {
-    // プレイヤーIDではなく、ニックネームをキーとして受け取るように変更（簡易化のため）
     const { playerId, mode } = req.body;
     
     if (!playerId || !['country', 'capital'].includes(mode)) {
@@ -67,26 +70,29 @@ app.post('/api/score/update', (req, res) => {
     }
 
     // IDでプレイヤーを検索
-    let player = players.find(p => p.id === playerId);
+    // Note: playerIdはフロントエンドで文字列として扱われる可能性があるため == を使用
+    let player = players.find(p => p.id == playerId); 
 
     if (!player) {
         return res.status(404).json({ message: "プレイヤーが見つかりません。" });
     }
 
-    // スコア加算
+    // スコア加算と最終更新日の設定
     const scoreKey = mode + '_clears';
     player[scoreKey] += 1;
     player.last_updated = new Date();
     
     console.log(`スコア更新: ID${player.id} ${player.nickname} (${mode}: ${player[scoreKey]})`);
 
+    // 更新後の新しいスコアを返す
     res.json({ message: "スコア更新成功", newScore: player[scoreKey] });
 });
 
 
 // ----------------------------------------------------
-// 3. ランキング取得API
+// 3. ランキング取得API: GET /api/rankings/:type
 // ----------------------------------------------------
+// 指定されたタイプ (total, country, capital) のランキングを返す
 app.get('/api/rankings/:type', (req, res) => {
     const type = req.params.type;
     let sortedPlayers;
@@ -107,7 +113,7 @@ app.get('/api/rankings/:type', (req, res) => {
         return res.status(400).json({ message: "無効なランキングタイプです。" });
     }
 
-    // 上位10名に絞り、ランキング形式で整形
+    // 上位10名に絞り、ランキング形式で整形して返す
     const ranking = sortedPlayers.slice(0, 10).map((p, index) => ({
         rank: index + 1,
         nickname: p.nickname,
@@ -117,9 +123,10 @@ app.get('/api/rankings/:type', (req, res) => {
     res.json(ranking);
 });
 
-// サーバー起動ログ
+// サーバー起動
 app.listen(PORT, () => {
     console.log(`==================================================`);
-    console.log(`★ Node.js Server running on http://localhost:${PORT}`);
+    console.log(`★ Node.js Server running on port ${PORT}`);
+    console.log(`★ API Base URL: http://localhost:${PORT}/api`);
     console.log(`==================================================`);
 });
