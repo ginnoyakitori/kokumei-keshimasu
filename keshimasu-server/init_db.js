@@ -3,8 +3,8 @@
 
 const db = require('./db');
 // 初期パズルのデータ構造が { data: [...], creator: "..." } であることを前提とする
-const COUNTRY_PUZZLES = require('./data/country_puzzles.json');
-const CAPITAL_PUZZLES = require('./data/capital_puzzles.json');
+const COUNTRY_PUZZLES = require('./data/country_words.json');
+const CAPITAL_PUZZLES = require('./data/capital_words.json');
 
 /**
  * データベースを初期化し、必要なテーブルを作成する。
