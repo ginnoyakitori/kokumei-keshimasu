@@ -11,7 +11,7 @@ const CAPITAL_PUZZLES = require('./data/capital_words.json');
  */
 async function initializeDatabase() {
     try {
-        // --- 1. players テーブルの定義 ---
+        // --- 1. players テーブルの定義 (created_at と DEFAULT 0 を含む) ---
         const createPlayersTable = `
             CREATE TABLE IF NOT EXISTS players (
                 id SERIAL PRIMARY KEY,
@@ -25,7 +25,7 @@ async function initializeDatabase() {
         await db.query(createPlayersTable);
         console.log('✅ Table "players" created or already exists.');
 
-        // --- 2. puzzles テーブルの定義 ---
+        // --- 2. puzzles テーブルの定義 (created_at を含む) ---
         const createPuzzlesTable = `
             CREATE TABLE IF NOT EXISTS puzzles (
                 id SERIAL PRIMARY KEY,
@@ -45,7 +45,7 @@ async function initializeDatabase() {
         if (puzzleCount === 0) {
             console.log('ℹ️ Initializing puzzles...');
 
-            // ★修正点: 初期パズルのデータ構造をデータベースの列名に合わせてマッピングする
+            // ★エラー解消の核となる修正: DBの列名 'board_data' にパズルデータの 'data' を正しくマッピングする
             const countryPuzzles = COUNTRY_PUZZLES.map(p => ({ 
                 mode: 'country', 
                 board_data: p.data, // JSONファイルの "data" を DBの "board_data" にマッピング
