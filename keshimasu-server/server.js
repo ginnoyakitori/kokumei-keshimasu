@@ -1,18 +1,19 @@
 // ----------------------------------------------------
-// Node.js (Express) サーバーコード - server.js (データベース永続化版)
+// Node.js (Express) サーバーコード - server.js (認証・データベース永続化版)
 // ----------------------------------------------------
 const express = require('express');
 const cors = require('cors');
-const { Pool } = require('pg'); // PostgreSQLクライアントをインポート
+const { Pool } = require('pg'); 
+const bcrypt = require('bcrypt'); // パスコードのハッシュ化用ライブラリ
 const app = express();
 
 const PORT = process.env.PORT || 3000; 
+const SALT_ROUNDS = 10; // bcryptの計算コスト
 
 // RenderのPostgreSQLデータベース接続設定
-// DATABASE_URLはRenderの環境変数として設定してください
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false // Render環境でのSSL設定
+    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
 app.use(cors()); 
@@ -26,17 +27,25 @@ async function initializeDatabase() {
         const client = await pool.connect();
         
         // プレイヤーテーブルが存在しない場合、作成する
+        // passcode_hash カラムを追加/修正
         const createTableQuery = `
             CREATE TABLE IF NOT EXISTS players (
                 id SERIAL PRIMARY KEY,
                 nickname VARCHAR(10) UNIQUE NOT NULL,
+                passcode_hash VARCHAR(255),  -- ★パスコードのハッシュを保存するカラム★
                 country_clears INTEGER DEFAULT 0,
                 capital_clears INTEGER DEFAULT 0,
                 last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+            -- 既存のテーブルにカラムがない場合にのみ追加 (Renderで初回デプロイなら不要だが、安全のため)
+            DO $$ BEGIN
+                ALTER TABLE players ADD COLUMN passcode_hash VARCHAR(255);
+            EXCEPTION
+                WHEN duplicate_column THEN null;
+            END $$;
         `;
         await client.query(createTableQuery);
-        console.log("✅ データベース接続およびテーブル作成に成功しました。");
+        console.log("✅ データベース接続およびテーブル作成/修正に成功しました。");
         client.release();
         
     } catch (err) {
@@ -49,9 +58,13 @@ async function initializeDatabase() {
 // 1. 認証/登録API: POST /api/player/register
 // ----------------------------------------------------
 app.post('/api/player/register', async (req, res) => {
-    const { nickname } = req.body;
-    if (!nickname) {
-        return res.status(400).json({ message: "ニックネームが必要です。" });
+    const { nickname, passcode } = req.body;
+    
+    if (!nickname || !passcode) {
+        return res.status(400).json({ message: "ニックネームとパスコードが必要です。" });
+    }
+    if (nickname.toLowerCase() === 'ゲスト') {
+        return res.status(400).json({ message: "ニックネームとして「ゲスト」は使用できません。" });
     }
 
     try {
@@ -59,40 +72,68 @@ app.post('/api/player/register', async (req, res) => {
         let result = await pool.query('SELECT * FROM players WHERE nickname = $1', [nickname]);
         let player = result.rows[0];
 
-        if (!player) {
-            // 新規登録
+        if (player) {
+            // --- ログイン処理 ---
+            if (!player.passcode_hash) {
+                return res.status(401).json({ message: "既存のユーザーですが、パスコードが設定されていません。別のニックネームを使ってください。" });
+            }
+            
+            const match = await bcrypt.compare(passcode, player.passcode_hash);
+            
+            if (match) {
+                console.log(`既存プレイヤー認証成功: ID${player.id}, ${nickname}`);
+                return res.json({ 
+                    message: "ログイン成功",
+                    player: {
+                        id: player.id,
+                        nickname: player.nickname,
+                        country_clears: player.country_clears,
+                        capital_clears: player.capital_clears
+                    }
+                });
+            } else {
+                return res.status(401).json({ message: "パスコードが正しくありません。" });
+            }
+            
+        } else {
+            // --- 新規登録処理 ---
+            const passcodeHash = await bcrypt.hash(passcode, SALT_ROUNDS);
+            
             const insertQuery = `
-                INSERT INTO players (nickname)
-                VALUES ($1)
+                INSERT INTO players (nickname, passcode_hash)
+                VALUES ($1, $2)
                 RETURNING id, nickname, country_clears, capital_clears
             `;
-            result = await pool.query(insertQuery, [nickname]);
+            result = await pool.query(insertQuery, [nickname, passcodeHash]);
             player = result.rows[0];
-            console.log(`新規プレイヤー登録: ID${player.id}, ${nickname}`);
-        } else {
-            console.log(`既存プレイヤー識別: ID${player.id}, ${nickname}`);
+            
+            console.log(`新規プレイヤー登録成功: ID${player.id}, ${nickname}`);
+            return res.json({ 
+                message: "新規登録成功",
+                player: {
+                    id: player.id,
+                    nickname: player.nickname,
+                    country_clears: player.country_clears,
+                    capital_clears: player.capital_clears
+                }
+            });
         }
-
-        res.json({ 
-            message: "プレイヤー情報取得成功",
-            player: {
-                id: player.id,
-                nickname: player.nickname,
-                country_clears: player.country_clears,
-                capital_clears: player.capital_clears
-            }
-        });
     } catch (error) {
-        console.error("プレイヤー登録/取得エラー:", error);
+        console.error("プレイヤー認証/登録エラー:", error);
+        // 重複エラーなど、一般的なエラーに対応
+        if (error.code === '23505') { 
+             return res.status(409).json({ message: "そのニックネームは既に使用されています。ログインしてください。" });
+        }
         res.status(500).json({ message: "サーバーエラーが発生しました。" });
     }
 });
 
 
 // ----------------------------------------------------
-// 2. スコア更新API: POST /api/score/update
+// 2. スコア更新API: POST /api/score/update (変更なし)
 // ----------------------------------------------------
 app.post('/api/score/update', async (req, res) => {
+    // ... スコア更新ロジック (変更なし) ...
     const { playerId, mode } = req.body;
     
     if (!playerId || !['country', 'capital'].includes(mode)) {
@@ -102,7 +143,6 @@ app.post('/api/score/update', async (req, res) => {
     const scoreKey = mode + '_clears';
     
     try {
-        // スコアをインクリメントして更新
         const updateQuery = `
             UPDATE players
             SET ${scoreKey} = ${scoreKey} + 1, last_updated = CURRENT_TIMESTAMP
@@ -127,9 +167,10 @@ app.post('/api/score/update', async (req, res) => {
 
 
 // ----------------------------------------------------
-// 3. ランキング取得API: GET /api/rankings/:type
+// 3. ランキング取得API: GET /api/rankings/:type (変更なし)
 // ----------------------------------------------------
 app.get('/api/rankings/:type', async (req, res) => {
+    // ... ランキング取得ロジック (変更なし) ...
     const type = req.params.type;
     let orderByClause = '';
 
