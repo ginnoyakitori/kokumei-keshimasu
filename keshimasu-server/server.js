@@ -1,126 +1,187 @@
 // ----------------------------------------------------
-// Node.js (Express) サーバーコード - server.js
+// Node.js (Express) サーバーコード - server.js (データベース永続化版)
 // ----------------------------------------------------
 const express = require('express');
 const cors = require('cors');
+const { Pool } = require('pg'); // PostgreSQLクライアントをインポート
 const app = express();
 
-// ポート番号を環境変数 'PORT' から取得 (デプロイ環境で必須)
 const PORT = process.env.PORT || 3000; 
 
-// ミドルウェアの設定: CORSを許可
+// RenderのPostgreSQLデータベース接続設定
+// Render環境変数のDATABASE_URLを使用することが推奨されます
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL || "postgres://keshimasu_user:password@hostname:5432/keshimasu_db",
+    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false // Render環境でのSSL設定
+});
+
 app.use(cors()); 
-// JSON形式のリクエストボディを解析
 app.use(express.json()); 
 
-// --- ★仮のデータベース (メモリ内) ---
-// サーバーを再起動するとデータはリセットされます
-let players = []; 
-let nextPlayerId = 1;
+// ----------------------------------------------------
+// データベース初期化と接続テスト
+// ----------------------------------------------------
+async function initializeDatabase() {
+    try {
+        const client = await pool.connect();
+        
+        // プレイヤーテーブルが存在しない場合、作成する
+        const createTableQuery = `
+            CREATE TABLE IF NOT EXISTS players (
+                id SERIAL PRIMARY KEY,
+                nickname VARCHAR(10) UNIQUE NOT NULL,
+                country_clears INTEGER DEFAULT 0,
+                capital_clears INTEGER DEFAULT 0,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `;
+        await client.query(createTableQuery);
+        console.log("✅ データベース接続およびテーブル作成に成功しました。");
+        client.release();
+        
+    } catch (err) {
+        console.error("❌ データベースの初期化エラー:", err);
+        // データベース接続に失敗してもサーバーは起動し続ける
+    }
+}
+
 
 // ----------------------------------------------------
 // 1. 認証/登録API: POST /api/player/register
 // ----------------------------------------------------
-app.post('/api/player/register', (req, res) => {
+app.post('/api/player/register', async (req, res) => {
     const { nickname } = req.body;
     if (!nickname) {
         return res.status(400).json({ message: "ニックネームが必要です。" });
     }
 
-    // 既に存在するプレイヤーかチェック (ニックネームで識別)
-    let player = players.find(p => p.nickname === nickname);
-    if (!player) {
-        // 新規登録
-        player = {
-            id: nextPlayerId++,
-            nickname,
-            country_clears: 0,
-            capital_clears: 0,
-            last_updated: new Date()
-        };
-        players.push(player);
-        console.log(`新規プレイヤー登録: ID${player.id}, ${nickname}`);
-    } else {
-        console.log(`既存プレイヤー識別: ID${player.id}, ${nickname}`);
-    }
+    try {
+        // ニックネームでプレイヤーを検索
+        let result = await pool.query('SELECT * FROM players WHERE nickname = $1', [nickname]);
+        let player = result.rows[0];
 
-    // プレイヤーIDと現在のスコアをフロントエンドに返す
-    res.json({ 
-        message: "プレイヤー情報取得成功",
-        player: {
-            id: player.id,
-            nickname: player.nickname,
-            country_clears: player.country_clears,
-            capital_clears: player.capital_clears
+        if (!player) {
+            // 新規登録
+            const insertQuery = `
+                INSERT INTO players (nickname)
+                VALUES ($1)
+                RETURNING id, nickname, country_clears, capital_clears
+            `;
+            result = await pool.query(insertQuery, [nickname]);
+            player = result.rows[0];
+            console.log(`新規プレイヤー登録: ID${player.id}, ${nickname}`);
+        } else {
+            console.log(`既存プレイヤー識別: ID${player.id}, ${nickname}`);
         }
-    });
+
+        // プレイヤーIDと現在のスコアをフロントエンドに返す
+        res.json({ 
+            message: "プレイヤー情報取得成功",
+            player: {
+                id: player.id,
+                nickname: player.nickname,
+                country_clears: player.country_clears,
+                capital_clears: player.capital_clears
+            }
+        });
+    } catch (error) {
+        console.error("プレイヤー登録/取得エラー:", error);
+        res.status(500).json({ message: "サーバーエラーが発生しました。" });
+    }
 });
 
 
 // ----------------------------------------------------
 // 2. スコア更新API: POST /api/score/update
 // ----------------------------------------------------
-app.post('/api/score/update', (req, res) => {
+app.post('/api/score/update', async (req, res) => {
     const { playerId, mode } = req.body;
     
     if (!playerId || !['country', 'capital'].includes(mode)) {
         return res.status(400).json({ message: "無効なリクエストです。" });
     }
-
-    // IDでプレイヤーを検索
-    let player = players.find(p => p.id == playerId); 
-
-    if (!player) {
-        return res.status(404).json({ message: "プレイヤーが見つかりません。" });
-    }
-
-    // スコア加算
-    const scoreKey = mode + '_clears';
-    player[scoreKey] += 1;
-    player.last_updated = new Date();
     
-    console.log(`スコア更新: ID${player.id} ${player.nickname} (${mode}: ${player[scoreKey]})`);
+    const scoreKey = mode + '_clears';
+    
+    try {
+        // スコアをインクリメントして更新
+        const updateQuery = `
+            UPDATE players
+            SET ${scoreKey} = ${scoreKey} + 1, last_updated = CURRENT_TIMESTAMP
+            WHERE id = $1
+            RETURNING ${scoreKey}
+        `;
+        const result = await pool.query(updateQuery, [playerId]);
 
-    res.json({ message: "スコア更新成功", newScore: player[scoreKey] });
+        if (result.rowCount === 0) {
+            return res.status(404).json({ message: "プレイヤーが見つかりません。" });
+        }
+
+        const newScore = result.rows[0][scoreKey];
+        console.log(`スコア更新: ID${playerId} (${mode}: ${newScore})`);
+
+        res.json({ message: "スコア更新成功", newScore });
+    } catch (error) {
+        console.error("スコア更新エラー:", error);
+        res.status(500).json({ message: "サーバーエラーが発生しました。" });
+    }
 });
 
 
 // ----------------------------------------------------
 // 3. ランキング取得API: GET /api/rankings/:type
 // ----------------------------------------------------
-app.get('/api/rankings/:type', (req, res) => {
+app.get('/api/rankings/:type', async (req, res) => {
     const type = req.params.type;
-    let sortedPlayers;
-
-    // ゲストプレイヤーを除外したリスト
-    const actualPlayers = players.filter(p => p.nickname !== 'ゲスト');
+    let orderByClause = '';
 
     if (type === 'total') {
-        // 合計クリア数でソート
-        sortedPlayers = actualPlayers.sort((a, b) => 
-            (b.country_clears + b.capital_clears) - (a.country_clears + a.capital_clears)
-        );
+        // SQLで合計を計算し、合計で降順にソート
+        orderByClause = '(country_clears + capital_clears) DESC';
     } else if (type === 'country' || type === 'capital') {
-        // 国名/首都名クリア数でソート
         const key = type + '_clears';
-        sortedPlayers = actualPlayers.sort((a, b) => b[key] - a[key]);
+        orderByClause = `${key} DESC`;
     } else {
         return res.status(400).json({ message: "無効なランキングタイプです。" });
     }
 
-    // 上位10名に絞り、ランキング形式で整形
-    const ranking = sortedPlayers.slice(0, 10).map((p, index) => ({
-        rank: index + 1,
-        nickname: p.nickname,
-        score: type === 'total' ? p.country_clears + p.capital_clears : p[type + '_clears']
-    }));
+    try {
+        // ゲストではないプレイヤーを取得し、ソート
+        const selectQuery = `
+            SELECT 
+                nickname, 
+                country_clears, 
+                capital_clears,
+                (country_clears + capital_clears) as total_clears
+            FROM players 
+            WHERE nickname != 'ゲスト'
+            ORDER BY ${orderByClause}, last_updated ASC
+            LIMIT 10
+        `;
+        
+        const result = await pool.query(selectQuery);
+        
+        // ランキング形式に整形
+        const ranking = result.rows.map((p, index) => ({
+            rank: index + 1,
+            nickname: p.nickname,
+            score: type === 'total' ? p.total_clears : p[type + '_clears']
+        }));
 
-    res.json(ranking);
+        res.json(ranking);
+
+    } catch (error) {
+        console.error("ランキング取得エラー:", error);
+        res.status(500).json({ message: "サーバーエラーが発生しました。" });
+    }
 });
 
-// サーバー起動
-app.listen(PORT, () => {
-    console.log(`==================================================`);
-    console.log(`★ Node.js Server running on port ${PORT}`);
-    console.log(`==================================================`);
+
+// サーバー起動とDB初期化
+initializeDatabase().then(() => {
+    app.listen(PORT, () => {
+        console.log(`==================================================`);
+        console.log(`★ Node.js Server running on port ${PORT}`);
+        console.log(`==================================================`);
+    });
 });
