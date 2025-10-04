@@ -1,6 +1,6 @@
 // keshimasu-client/script.js
 // ----------------------------------------------------
-// フロントエンド JavaScript コード - script.js (最終版)
+// フロントエンド JavaScript コード - script.js (最終版: 認証画面、ルール表示、ワードリスト1列表示対応)
 // ----------------------------------------------------
 
 // ★★★ 🚨 要修正 ★★★
@@ -12,6 +12,7 @@ const API_BASE_URL = 'https://kokumei-keshimasu.onrender.com/api';
 // サーバーから動的にロードされる問題リスト
 let allPuzzles = { country: [], capital: [] }; 
 
+// ゲームで使用する辞書 (サーバーで管理されているものと同じ内容)
 // 辞書データ (テスト用) - カタカナを使用
 const COUNTRY_DICT = [
   "アイスランド","アイルランド","アゼルバイジャン","アフガニスタン","アメリカ",
@@ -70,7 +71,7 @@ let currentDictionary = COUNTRY_DICT;
 let currentPuzzleIndex = -1; 
 
 // ランキング/プレイヤー関連
-let currentPlayerNickname = "ゲスト";
+let currentPlayerNickname = null; // 認証前はnull
 let currentPlayerId = null; 
 let playerStats = { 
     country_clears: 0,
@@ -80,11 +81,12 @@ let playerStats = {
 
 // DOM要素の取得
 const screens = {
+    auth: document.getElementById('auth-screen'), 
     home: document.getElementById('home-screen'),
     mainGame: document.getElementById('main-game-screen'),
     create: document.getElementById('create-puzzle-screen'),
     ranking: document.getElementById('ranking-screen'),
-    wordList: document.getElementById('word-list-screen') // ワードリスト画面を追加
+    wordList: document.getElementById('word-list-screen')
 };
 const appTitleElement = document.getElementById('app-title'); 
 const boardElement = document.getElementById('board');
@@ -92,6 +94,14 @@ const eraseButton = document.getElementById('erase-button');
 const createBoardElement = document.getElementById('create-board');
 const btnInputComplete = document.getElementById('btn-input-complete');
 const resetBtn = document.getElementById('reset-button');
+
+// 認証フォーム要素
+const inputNickname = document.getElementById('input-nickname');
+const inputPasscode = document.getElementById('input-passcode');
+const btnAuthSubmit = document.getElementById('btn-auth-submit');
+const welcomeMessage = document.getElementById('welcome-message');
+
+// ワードリスト要素
 const wordListContent = document.getElementById('word-list-content');
 const wordListTabs = document.getElementById('word-list-tabs');
 
@@ -154,86 +164,62 @@ async function loadPuzzles() {
         
     } catch (error) {
         console.error("問題のロードに失敗しました。サーバーが起動しているか確認してください。", error);
-        alert("サーバーから問題データをロードできませんでした。");
+        // ゲストモードでも問題がロードできない場合はアラート
+        if (currentPlayerNickname === 'ゲスト') {
+            alert("サーバーから問題データをロードできませんでした。");
+        }
     }
 }
 
+/**
+ * ページロード時に認証状態をチェックし、認証画面を表示する
+ */
 async function setupPlayer() {
     currentPlayerId = localStorage.getItem('player_id');
-    currentPlayerNickname = localStorage.getItem('keshimasu_nickname') || "ゲスト";
+    currentPlayerNickname = localStorage.getItem('keshimasu_nickname');
 
-    const defaultNickname = '銀の焼き鳥';
-    const defaultPasscode = '0425';
-
-    if (currentPlayerNickname === defaultNickname && currentPlayerId) {
-        // デフォルトユーザーとしてログイン済み
-    } else if (currentPlayerNickname === "ゲスト" && !localStorage.getItem('default_user_checked')) {
-        // 初回起動時、デフォルトユーザーの存在確認
-        localStorage.setItem('default_user_checked', 'true');
-        await registerPlayer(defaultNickname, defaultPasscode);
-    }
-    
-    if (currentPlayerNickname === "ゲスト" || !currentPlayerId) {
-        await promptForNickname(true);
-    }
-    
-    // 問題をサーバーからロード
-    await loadPuzzles(); 
-}
-
-async function promptForNickname(isInitialRegistration) {
-    while (true) {
-        let nickname = prompt(`ニックネームを入力してください (10文字以内):`);
-        if (!nickname || nickname.trim() === "") {
-            if (isInitialRegistration) {
-                alert("ニックネームの入力は必須です。");
-                continue;
-            }
-            currentPlayerNickname = "ゲスト";
-            currentPlayerId = null;
+    // 認証済みの場合、サーバーから最新のステータスを取得
+    if (currentPlayerId && currentPlayerNickname) {
+        const success = await getPlayerStatus(currentPlayerId);
+        if (success) {
+            await loadPuzzles();
+            showScreen('home');
             return;
         }
-
-        const finalName = nickname.trim().slice(0, 10);
-        
-        let passcode = prompt(`${finalName}さんのパスコードを入力してください (新規登録/ログイン):`);
-        if (!passcode || passcode.trim() === "") {
-            alert("パスコードの入力は必須です。");
-            continue;
-        }
-
-        const success = await registerPlayer(finalName, passcode);
-        if (success) {
-            alert(`${finalName}さん、${isInitialRegistration ? '新規登録' : 'ログイン'}成功です！`);
-            break; 
-        } else {
-            const retry = confirm("認証に失敗しました。再試行しますか？");
-            if (!retry) {
-                currentPlayerNickname = "ゲスト";
-                currentPlayerId = null;
-                alert("ゲストとしてゲームを開始します。スコアは保存されません。");
-                break;
-            }
-        }
+        // ステータス取得失敗（ID無効など）
+        currentPlayerId = null;
+        currentPlayerNickname = null;
+        localStorage.removeItem('player_id');
+        localStorage.removeItem('keshimasu_nickname');
     }
+    
+    // 未認証の場合は認証画面を表示
+    showScreen('auth');
 }
 
-async function registerPlayer(nickname, passcode) {
+/**
+ * ニックネームとパスコードでログイン/新規登録を試みる
+ */
+async function attemptAuth(nickname, passcode) {
+    if (!nickname || nickname.trim() === "" || !passcode || passcode.trim() === "") {
+        alert("ニックネームとパスコードの両方を入力してください。");
+        return false;
+    }
+
+    const finalName = nickname.trim().slice(0, 10);
+
     try {
         const response = await fetch(`${API_BASE_URL}/player/register`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ nickname, passcode })
+            body: JSON.stringify({ nickname: finalName, passcode })
         });
         
         const data = await response.json();
         
         if (!response.ok) {
-            console.error(`認証失敗: ${data.message || 'サーバーエラー'}`);
-            if (nickname !== '銀の焼き鳥') {
-                alert(`認証失敗: ${data.message || 'サーバーエラー'}`);
-            }
-            throw new Error(data.message);
+            alert(`認証失敗: ${data.message || 'サーバーエラー'}`);
+            return false;
         }
         
         if (data.player) {
@@ -244,10 +230,36 @@ async function registerPlayer(nickname, passcode) {
             
             localStorage.setItem('keshimasu_nickname', currentPlayerNickname);
             localStorage.setItem('player_id', currentPlayerId);
+            
+            // 初回登録/ログイン成功メッセージ
+            const message = data.isNewUser ? `${finalName}さん、新規登録成功です！` : `${finalName}さん、ログイン成功です！`;
+            alert(message);
+            
+            // 問題リストをロードし、ホーム画面へ
+            await loadPuzzles();
+            showScreen('home');
             return true;
         }
     } catch (error) {
         console.error("プレイヤー認証/登録に失敗しました。", error);
+        return false;
+    }
+}
+
+/**
+ * プレイヤーIDから最新のステータスを取得する
+ */
+async function getPlayerStatus(id) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/player/${id}`);
+        if (!response.ok) throw new Error("プレイヤー情報が見つかりません");
+        
+        const data = await response.json();
+        playerStats.country_clears = data.player.country_clears;
+        playerStats.capital_clears = data.player.capital_clears;
+        return true;
+    } catch (error) {
+        console.error("プレイヤー情報の取得に失敗。", error);
         return false;
     }
 }
@@ -267,6 +279,7 @@ function showScreen(screenName) {
     if (screenName === 'home') {
         appTitleElement.style.display = 'block';
         updateHomeProblemCount();
+        welcomeMessage.textContent = `${currentPlayerNickname}さん、ようこそ！`;
     } else {
         appTitleElement.style.display = 'none';
     }
@@ -793,6 +806,37 @@ function displayWordList(type) {
 
 // --- 6. イベントリスナーの設定 ---
 
+// 認証画面リスナー
+btnAuthSubmit.addEventListener('click', () => {
+    attemptAuth(inputNickname.value, inputPasscode.value);
+});
+inputPasscode.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        attemptAuth(inputNickname.value, inputPasscode.value);
+    }
+});
+document.getElementById('btn-play-as-guest').addEventListener('click', async () => {
+    currentPlayerNickname = "ゲスト";
+    currentPlayerId = null;
+    localStorage.removeItem('player_id');
+    localStorage.removeItem('keshimasu_nickname');
+    alert("ゲストとしてゲームを開始します。スコアは保存されません。");
+    
+    await loadPuzzles();
+    showScreen('home');
+});
+document.getElementById('btn-logout').addEventListener('click', () => {
+    currentPlayerNickname = null;
+    currentPlayerId = null;
+    localStorage.removeItem('player_id');
+    localStorage.removeItem('keshimasu_nickname');
+    inputNickname.value = '';
+    inputPasscode.value = '';
+    showScreen('auth');
+});
+
+
+// ホーム画面リスナー
 document.getElementById('btn-country-mode').addEventListener('click', () => {
     startGame(true, false); 
 });
@@ -802,7 +846,6 @@ document.getElementById('btn-capital-mode').addEventListener('click', () => {
 document.getElementById('btn-create-mode').addEventListener('click', () => {
     if (currentPlayerNickname === 'ゲスト') {
         alert("問題制作モードを利用するには、ニックネームとパスコードを設定してログインしてください。");
-        promptForNickname(true);
         return;
     }
     showScreen('create');
@@ -818,11 +861,8 @@ document.getElementById('btn-ranking').addEventListener('click', () => {
 // ワードリストボタンのリスナー
 document.getElementById('btn-word-list').addEventListener('click', () => {
     showScreen('wordList');
-    // 初期表示は国名リスト
     displayWordList('country'); 
 });
-
-// ワードリストタブのリスナー
 wordListTabs.addEventListener('click', (event) => {
     if (event.target.tagName === 'BUTTON') {
         displayWordList(event.target.dataset.type);
@@ -845,4 +885,3 @@ document.getElementById('btn-word-list-back').addEventListener('click', () => {
 
 // 初期化
 setupPlayer();
-showScreen('home');

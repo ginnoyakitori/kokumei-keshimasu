@@ -514,3 +514,50 @@ h2 {
     font-size: 0.8em;
     margin-right: 5px;
 }
+
+/* --- 認証画面 (Auth Screen) スタイル --- */
+.auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    align-items: center;
+    margin-top: 25px;
+}
+
+.auth-form input {
+    width: 80%;
+    max-width: 300px;
+    padding: 12px;
+    border-radius: 6px;
+    border: 1px solid #444;
+    background-color: #333;
+    color: #f0f0f0;
+    font-size: 1em;
+    text-align: center;
+}
+
+#btn-auth-submit {
+    width: 80%;
+    max-width: 300px;
+    padding: 12px;
+    background: linear-gradient(145deg, #FFD700, #c0a800);
+    color: #1c1c1c; 
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 1em;
+    font-weight: bold;
+    box-shadow: 0 4px #a08800;
+    transition: all 0.1s;
+}
+
+#btn-auth-submit:hover {
+    background: linear-gradient(145deg, #FFEF95, #FFD700);
+    transform: translateY(-1px);
+    box-shadow: 0 5px #a08800;
+}
+
+#btn-auth-submit:active {
+    transform: translateY(3px);
+    box-shadow: 0 1px #a08800;
+}

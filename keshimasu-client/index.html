@@ -10,11 +10,29 @@
     <div id="app-container">
         <h1 id="app-title">国名・首都名ケシマス</h1>
 
-        <div id="home-screen" class="screen">
+        <div id="auth-screen" class="screen">
+            <h2>ようこそ！</h2>
+            <p id="auth-message">ニックネームとパスコードを入力して、ログインまたは初回登録をしてください。</p>
+            
+            <div class="auth-form">
+                <input type="text" id="input-nickname" placeholder="ニックネーム (10文字以内)" maxlength="10">
+                <input type="password" id="input-passcode" placeholder="パスコード" maxlength="20">
+                
+                <button id="btn-auth-submit">ログイン/新規登録</button>
+            </div>
+            
+            <button id="btn-play-as-guest" class="secondary-btn" style="margin-top: 15px;">
+                ゲストとしてプレイ（スコアは保存されません）
+            </button>
+        </div>
+        <div id="home-screen" class="screen" style="display:none;">
+            
+            <p id="welcome-message" style="font-weight: bold; font-size: 1.1em; color: #FFD700; margin-bottom: 20px;">
+                </p>
             
             <div class="game-rules">
                 <h3>ゲームルール</h3>
-                <p>8×5マスの盤面（表示は5×5）の全40文字を消去してクリアを目指すパズルゲームです。</p>
+                <p>8×5マスの盤面（表示は5×5）の**全40文字**を消去してクリアを目指すパズルゲームです。</p>
                 
                 <ul class="rule-list">
                     <li>消去条件: 盤面上の文字を、左から右 または 上から下 に向かって一直線に選択し、その文字列を国名（または**首都名**）にすることで消去できます。</li>
@@ -27,31 +45,35 @@
             </div>
             <div class="mode-selection">
                 <div class="mode-card">
-                    <h2>国名ケシマス</h2>
-                    <button id="btn-country-mode">標準問題に挑戦</button>
+                    
+                    <button id="btn-country-mode">国名ケシマスを解く</button>
                     <span id="country-problem-count" class="problem-count-display">問題数: 0問</span>
                 </div>
                 
                 <div class="mode-card">
-                    <h2>首都名ケシマス</h2>
-                    <button id="btn-capital-mode">標準問題に挑戦</button>
+                    <h2></h2>
+                    <button id="btn-capital-mode">首都名ケシマスを解く</button>
                     <span id="capital-problem-count" class="problem-count-display">問題数: 0問</span>
                 </div>
 
                 <div class="mode-card">
-                    <h2>問題制作</h2>
-                    <button id="btn-create-mode">自分で問題を作る</button>
+                    <h2></h2>
+                    <button id="btn-create-mode">問題を作る</button>
                 </div>
 
                 <div class="mode-card">
-                    <h2>ランキング</h2>
-                    <button id="btn-ranking">ランキングを見る</button>
+                    <h2></h2>
+                    <button id="btn-ranking">ランキング</button>
                 </div>
             </div>
 
             <button id="btn-word-list" class="secondary-btn" style="margin-top: 20px;">
                 利用可能な国名・首都名一覧
             </button>
+            
+            <div class="control-panel">
+                <button id="btn-logout" class="secondary-btn" style="margin-top: 20px;">ログアウト</button>
+            </div>
             
         </div>
 
