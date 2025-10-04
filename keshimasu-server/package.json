@@ -1,15 +1,28 @@
 {
   "name": "keshimasu-server",
   "version": "1.0.0",
-  "description": "KeshiMasu Game Server for API",
+  "description": "Backend server for the Keshimasu game with PostgreSQL persistence.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "initdb": "node init_db.js",
+    "dev": "nodemon server.js"
   },
+  "keywords": [
+    "express",
+    "postgres",
+    "game"
+  ],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
-    "body-parser": "^1.20.2",
+    "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "uuid": "^9.0.1"
+    "pg": "^8.11.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
   }
 }
