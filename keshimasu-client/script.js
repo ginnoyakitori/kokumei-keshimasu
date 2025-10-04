@@ -1,5 +1,5 @@
 // ----------------------------------------------------
-// フロントエンド JavaScript コード - script.js
+// フロントエンド JavaScript コード - script.js (認証・制作者名修正版)
 // ----------------------------------------------------
 
 // ★APIのURLを定義 (Renderデプロイ時に、ここにWeb ServiceのURLを設定してください)
@@ -8,11 +8,16 @@ const API_BASE_URL = 'http://localhost:3000/api';
 
 // --- 1. 定数と初期データ ---
 
+// ★ ユーザー指定の初期盤面 ★
 const initialBoardData_Standard = [
-    ['セ', 'カ', 'イ', 'イ', 'エ'], ['ノ', 'キ', 'ュ', 'ウ', 'ビ'], 
-    ['タ', 'イ', 'ワ', 'ン', 'ワ'], ['ニ', 'ホ', 'ン', 'F', 'ラ'],
-    ['ア', 'メ', 'リ', 'カ', 'ス'], ['イ', 'ギ', 'リ', 'ス', 'マ'],
-    ['ド', 'イ', 'ツ', 'フ', 'ス'], ['オ', 'ー', 'ス', 'ト', 'ラ']
+    ['マ', 'ベ', 'ナ', 'ン', 'マ'], 
+    ['ル', 'サ', 'モ', 'ア', 'リ'], 
+    ['タ', 'イ', 'エ', 'メ', 'ン'], 
+    ['ニ', 'ホ', 'ン', 'F', 'グ'],
+    ['ア', 'メ', 'リ', 'カ', 'F'],
+    ['イ', 'ギ', 'リ', 'ス', 'F'],
+    ['ド', 'イ', 'ツ', 'リ', 'マ'],
+    ['ラ', 'ト', 'ビ', 'ア', 'ラ']
 ];
 
 const COUNTRY_DICT = ['アメリカ', 'イギリス', 'ドイツ', 'フランス', 'ニホン', 'タイワン'];
@@ -66,42 +71,75 @@ function isValidGameChar(char) {
     return /^[\u30a0-\u30ff]$/.test(char); 
 }
 
-// --- サーバー連携・プレイヤー認証 ---
+// --- サーバー連携・プレイヤー認証 (認証ロジックを大幅に修正) ---
 
 async function setupPlayer() {
     currentPlayerId = localStorage.getItem('player_id');
     currentPlayerNickname = localStorage.getItem('keshimasu_nickname') || "ゲスト";
 
-    if (!currentPlayerNickname || currentPlayerNickname === "ゲスト" || !currentPlayerId) {
-        await promptForNickname(true);
+    // 以前登録していたプレイヤーであれば、ログインを試行
+    if (currentPlayerNickname !== "ゲスト" && currentPlayerId) {
+        await promptForNickname(false); // ログインダイアログを表示
     } else {
-        await registerPlayer(currentPlayerNickname);
+        // 初回、または以前のゲストユーザーの場合
+        alert("ニックネームとパスコードを設定して、ランキングに挑戦しましょう！");
+        await promptForNickname(true);
     }
 }
 
-async function promptForNickname(isInitial = false) {
-    const defaultName = localStorage.getItem('keshimasu_nickname') || "";
-    let nickname = prompt("ニックネームを入力してください (10文字以内):", defaultName);
-    
-    if (nickname && nickname.trim() !== "") {
+async function promptForNickname(isInitialRegistration) {
+    while (true) {
+        let nickname = prompt(`ニックネームを入力してください (10文字以内):`);
+        if (!nickname || nickname.trim() === "") {
+            if (isInitialRegistration) {
+                alert("ニックネームの入力は必須です。");
+                continue;
+            }
+            // ゲストとして続行
+            currentPlayerNickname = "ゲスト";
+            currentPlayerId = null;
+            return;
+        }
+
         const finalName = nickname.trim().slice(0, 10);
-        await registerPlayer(finalName);
-    } else if (isInitial) {
-        alert("ニックネームがないとスコアは「ゲスト」として扱われ、ランキングには反映されません。");
+        
+        let passcode = prompt(`${finalName}さんのパスコードを入力してください (新規登録/ログイン):`);
+        if (!passcode || passcode.trim() === "") {
+            alert("パスコードの入力は必須です。");
+            continue;
+        }
+
+        const success = await registerPlayer(finalName, passcode);
+        if (success) {
+            alert(`${finalName}さん、${isInitialRegistration ? '新規登録' : 'ログイン'}成功です！`);
+            break; 
+        } else {
+            // 失敗した場合は再入力またはゲスト続行を促す
+            const retry = confirm("認証に失敗しました。再試行しますか？");
+            if (!retry) {
+                currentPlayerNickname = "ゲスト";
+                currentPlayerId = null;
+                alert("ゲストとしてゲームを開始します。スコアは保存されません。");
+                break;
+            }
+        }
     }
 }
 
-async function registerPlayer(nickname) {
+async function registerPlayer(nickname, passcode) {
     try {
         const response = await fetch(`${API_BASE_URL}/player/register`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ nickname })
+            body: JSON.stringify({ nickname, passcode })
         });
         
-        if (!response.ok) throw new Error('サーバーエラー');
-        
         const data = await response.json();
+        
+        if (!response.ok) {
+            alert(`認証失敗: ${data.message || 'サーバーエラー'}`);
+            throw new Error(data.message);
+        }
         
         if (data.player) {
             currentPlayerNickname = data.player.nickname;
@@ -111,11 +149,11 @@ async function registerPlayer(nickname) {
             
             localStorage.setItem('keshimasu_nickname', currentPlayerNickname);
             localStorage.setItem('player_id', currentPlayerId);
+            return true;
         }
     } catch (error) {
-        console.error("サーバー登録に失敗しました。", error);
-        currentPlayerNickname = "ゲスト";
-        currentPlayerId = null;
+        console.error("プレイヤー認証/登録に失敗しました。", error);
+        return false;
     }
 }
 
@@ -128,7 +166,7 @@ function showScreen(screenName) {
     });
 }
 
-function startGame(initialData, isCountry, isCreation, creatorName = '標準問題') {
+function startGame(initialData, isCountry, isCreation) {
     initialPlayData = JSON.parse(JSON.stringify(initialData));
     boardData = JSON.parse(JSON.stringify(initialData));
     isCountryMode = isCountry;
@@ -149,11 +187,13 @@ function startGame(initialData, isCountry, isCreation, creatorName = '標準問�
     document.getElementById('problem-number-display').textContent = 
         isCreation ? '問題制作モード' : `第 ${nextProblemNumber} 問`;
         
-    // ★ 制作者名を表示するロジック ★
+    // ★ 制作者名を表示するロジック (要望通り修正) ★
     if (isCreation) {
-        document.getElementById('creator-display').textContent = `制作者: ${creatorName}`;
+        // 制作モードでプレイする場合、ログイン中のユーザー名を制作者名として表示
+        document.getElementById('creator-display').textContent = `制作者: ${currentPlayerNickname}`;
     } else {
-        document.getElementById('creator-display').textContent = `制作者: 標準問題`;
+        // 標準問題の場合
+        document.getElementById('creator-display').textContent = `制作者: 銀の焼き鳥`;
     }
         
     updateStatusDisplay();
@@ -264,50 +304,37 @@ function handleCellClick(event) {
     const r = parseInt(event.target.dataset.r);
     const c = parseInt(event.target.dataset.c);
 
-    // 選択済みのセルがない場合は、最初のセルとして追加
     if (selectedCells.length === 0) {
         selectedCells.push([r, c]);
         eraseButton.disabled = false;
     } else {
         const [prevR, prevC] = selectedCells[selectedCells.length - 1];
         
-        // 新しいセルが隣接しているか判定
         const isHorizontal = r === prevR && Math.abs(c - prevC) === 1;
         const isVertical = c === prevC && Math.abs(r - prevR) === 1;
 
-        // 既に選択済みのセルをクリックした場合、そこまで選択を戻す
         const index = selectedCells.findIndex(coord => coord[0] === r && coord[1] === c);
         if (index > -1) {
-            // 選択済みのセルを再度クリックしたら、そのセル以降を解除
             selectedCells.splice(index + 1);
         }
-        // 隣接しているセルが選択された場合
         else if (isHorizontal || isVertical) {
             
             let shouldAdd = false;
             
             if (selectedCells.length === 1) {
-                // 2番目のセル選択時: パターンを決定する
                 shouldAdd = true;
             } else {
-                // 3番目以降のセル選択時: パターンを維持しているかチェック
                 const [firstR, firstC] = selectedCells[0];
                 
-                // 既に選択されているすべてのセルが横一列に並んでいるか
                 const isCurrentPatternHorizontal = selectedCells.every(coord => coord[0] === firstR);
-                // 既に選択されているすべてのセルが縦一列に並んでいるか
                 const isCurrentPatternVertical = selectedCells.every(coord => coord[1] === firstC);
                 
-                // 横一列の選択中
                 if (isCurrentPatternHorizontal) {
-                    // 新しいセルが同じ行 (r === firstR) かつ横隣 (isHorizontal) であるか
                     if (r === firstR && isHorizontal) {
                         shouldAdd = true;
                     }
                 } 
-                // 縦一列の選択中
                 else if (isCurrentPatternVertical) {
-                    // 新しいセルが同じ列 (c === firstC) かつ縦隣 (isVertical) であるか
                     if (c === firstC && isVertical) {
                         shouldAdd = true;
                     }
@@ -317,17 +344,14 @@ function handleCellClick(event) {
             if (shouldAdd) {
                 selectedCells.push([r, c]);
             } else {
-                // パターンが維持されていない場合はリセット
                 selectedCells = [[r, c]];
             }
         } 
-        // 隣接していない場合は選択をリセット
         else {
             selectedCells = [[r, c]];
         }
     }
     
-    // 消去ボタンは2セル以上選択されたときのみ有効
     eraseButton.disabled = selectedCells.length < 2;
     renderBoard(5);
 }
@@ -342,7 +366,6 @@ eraseButton.addEventListener('click', async () => {
 
     const mode = isCountryMode ? '国名' : '首都名';
     
-    // Fが含まれる場合の処理を修正
     if (selectedWord.includes('F')) {
         let tempWordChars = [...selectedWordChars]; 
         let fIndices = []; 
@@ -353,7 +376,6 @@ eraseButton.addEventListener('click', async () => {
             }
         });
 
-        // 'F' の箇所だけをユーザーに入力させる
         for (const index of fIndices) {
             let inputChar = '';
             
@@ -372,13 +394,11 @@ eraseButton.addEventListener('click', async () => {
                 return; 
             }
         }
-        finalWord = tempWordChars.join(''); // Fを置き換えた後の最終的な単語
+        finalWord = tempWordChars.join('');
     } else {
-        // 'F' が含まれない場合は、そのままの単語を使用
         finalWord = selectedWord;
     }
 
-    // --- 辞書チェック ---
     if (!currentDictionary.includes(finalWord)) {
         alert(`「${finalWord}」は有効な${mode}ではありません。`);
         return;
@@ -406,14 +426,11 @@ eraseButton.addEventListener('click', async () => {
 });
 
 resetBtn.addEventListener('click', () => { 
-    // リセット時、制作モードでプレイしていた場合はその制作者名を再度渡す必要があるが、
-    // initialPlayDataには制作者情報は含まれないため、ここでは標準問題としてリセット
-    // ※問題制作モードのローカルリセットなのでこれでOK
     startGame(initialPlayData, isCountryMode, isCreationPlay); 
 });
 
 
-// --- 4. 問題制作モードのロジック (制作者名受け渡しを修正) ---
+// --- 4. 問題制作モードのロジック ---
 
 function renderCreateBoard() { 
     createBoardElement.innerHTML = '';
@@ -485,12 +502,12 @@ btnInputComplete.addEventListener('click', () => {
     const modeSelect = document.getElementById('creation-mode-select');
     const isCountry = modeSelect.value === 'country';
 
-    // ★ 修正済み: 制作者名としてcurrentPlayerNicknameを渡す ★
-    startGame(newBoard, isCountry, true, currentPlayerNickname); 
+    // 制作モードのstartGameは、currentPlayerNicknameを制作者名として使用
+    startGame(newBoard, isCountry, true); 
 });
 
 
-// --- 5. ランキングロジック ---
+// --- 5. ランキングロジック (変更なし) ---
 
 const rankingScreen = document.getElementById('ranking-screen');
 const rankingTabs = document.getElementById('ranking-tabs');
@@ -536,6 +553,12 @@ document.getElementById('btn-capital-mode').addEventListener('click', () => {
     startGame(initialBoardData_Standard, false, false);
 });
 document.getElementById('btn-create-mode').addEventListener('click', () => {
+    // ゲストユーザーは問題制作モードを利用できないようにする
+    if (currentPlayerNickname === 'ゲスト') {
+        alert("問題制作モードを利用するには、ニックネームとパスコードを設定してログインしてください。");
+        promptForNickname(true);
+        return;
+    }
     showScreen('create');
     renderCreateBoard();
     checkCreationInput();
