@@ -9,9 +9,9 @@ const app = express();
 const PORT = process.env.PORT || 3000; 
 
 // RenderのPostgreSQLデータベース接続設定
-// Render環境変数のDATABASE_URLを使用することが推奨されます
+// DATABASE_URLはRenderの環境変数として設定してください
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || "postgres://keshimasu_user:password@hostname:5432/keshimasu_db",
+    connectionString: process.env.DATABASE_URL,
     ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false // Render環境でのSSL設定
 });
 
@@ -19,7 +19,7 @@ app.use(cors());
 app.use(express.json()); 
 
 // ----------------------------------------------------
-// データベース初期化と接続テスト
+// データベース初期化
 // ----------------------------------------------------
 async function initializeDatabase() {
     try {
@@ -41,7 +41,6 @@ async function initializeDatabase() {
         
     } catch (err) {
         console.error("❌ データベースの初期化エラー:", err);
-        // データベース接続に失敗してもサーバーは起動し続ける
     }
 }
 
@@ -74,7 +73,6 @@ app.post('/api/player/register', async (req, res) => {
             console.log(`既存プレイヤー識別: ID${player.id}, ${nickname}`);
         }
 
-        // プレイヤーIDと現在のスコアをフロントエンドに返す
         res.json({ 
             message: "プレイヤー情報取得成功",
             player: {
@@ -136,7 +134,6 @@ app.get('/api/rankings/:type', async (req, res) => {
     let orderByClause = '';
 
     if (type === 'total') {
-        // SQLで合計を計算し、合計で降順にソート
         orderByClause = '(country_clears + capital_clears) DESC';
     } else if (type === 'country' || type === 'capital') {
         const key = type + '_clears';
@@ -146,7 +143,6 @@ app.get('/api/rankings/:type', async (req, res) => {
     }
 
     try {
-        // ゲストではないプレイヤーを取得し、ソート
         const selectQuery = `
             SELECT 
                 nickname, 
@@ -161,7 +157,6 @@ app.get('/api/rankings/:type', async (req, res) => {
         
         const result = await pool.query(selectQuery);
         
-        // ランキング形式に整形
         const ranking = result.rows.map((p, index) => ({
             rank: index + 1,
             nickname: p.nickname,
