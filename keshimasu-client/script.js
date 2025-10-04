@@ -1,15 +1,15 @@
 // ----------------------------------------------------
-// フロントエンド JavaScript コード - script.js (認証・制作者名修正版)
+// フロントエンド JavaScript コード - script.js (最終修正版)
 // ----------------------------------------------------
 
 // ★APIのURLを定義 (Renderデプロイ時に、ここにWeb ServiceのURLを設定してください)
 // 例: const API_BASE_URL = 'https://keshimasu-server-xyz.onrender.com/api'; 
-const API_BASE_URL = 'https://kokumei-keshimasu.onrender.com/api'; 
+ const API_BASE_URL = 'https://kokimei-keshimasu.onrender.com/api';  
 
 // --- 1. 定数と初期データ ---
 
-// ★ ユーザー指定の初期盤面 ★
-const initialBoardData_Standard = [
+// 国名ケシマス用初期盤面 (ユーザー指定の最新版)
+const initialBoardData_Country = [
     ['マ', 'ベ', 'ナ', 'ン', 'マ'], 
     ['ル', 'サ', 'モ', 'ア', 'リ'], 
     ['タ', 'イ', 'エ', 'メ', 'ン'], 
@@ -18,6 +18,18 @@ const initialBoardData_Standard = [
     ['イ', 'ギ', 'リ', 'ス', 'F'],
     ['ド', 'イ', 'ツ', 'リ', 'マ'],
     ['ラ', 'ト', 'ビ', 'ア', 'ラ']
+];
+
+// ★ 首都名ケシマス用初期盤面 (ユーザー指定の新規盤面) ★
+const initialBoardData_Capital = [
+    ['パ', 'ラ', 'ソ', 'ウ', 'ル'], 
+    ['ザ', 'タ', 'マ', 'リ', 'ボ'], 
+    ['F', 'リ', 'ぺ', 'キ', 'ン'], 
+    ['レ', 'ン', 'リ', 'ガ', 'ベ'],
+    ['F', 'ボ', 'F', 'タ', 'F'],
+    ['ダ', 'ブ', 'リ', 'ン', 'ル'],
+    ['パ', 'リ', 'ジ', 'ャ', 'ー'],
+    ['ア', 'ブ', 'リ', 'マ', 'ト']
 ];
 // 辞書データ (テスト用) - カタカナを使用
 const COUNTRY_DICT = [
@@ -114,17 +126,27 @@ function isValidGameChar(char) {
     return /^[\u30a0-\u30ff]$/.test(char); 
 }
 
-// --- サーバー連携・プレイヤー認証 (認証ロジックを大幅に修正) ---
+// --- サーバー連携・プレイヤー認証 (自動ログイン/登録処理を修正) ---
 
 async function setupPlayer() {
     currentPlayerId = localStorage.getItem('player_id');
     currentPlayerNickname = localStorage.getItem('keshimasu_nickname') || "ゲスト";
 
-    // 以前登録していたプレイヤーであれば、ログインを試行
-    if (currentPlayerNickname !== "ゲスト" && currentPlayerId) {
-        await promptForNickname(false); // ログインダイアログを表示
-    } else {
-        // 初回、または以前のゲストユーザーの場合
+    // ★ 特殊処理: 「銀の焼き鳥」の自動初回登録/ログイン ★
+    const defaultNickname = '銀の焼き鳥';
+    const defaultPasscode = '0425';
+
+    if (currentPlayerNickname === defaultNickname && currentPlayerId) {
+        // 以前「銀の焼き鳥」としてログインしていた場合、パスコードでログインを試行
+        await registerPlayer(defaultNickname, defaultPasscode);
+    } else if (currentPlayerNickname === "ゲスト" && !localStorage.getItem('default_user_checked')) {
+        // 初回起動時、まず「銀の焼き鳥」の登録/ログインを試みる（パスコード設定のため）
+        localStorage.setItem('default_user_checked', 'true');
+        await registerPlayer(defaultNickname, defaultPasscode);
+    }
+    
+    // 現在のユーザーがゲストの場合は、手動でログイン/登録を促す
+    if (currentPlayerNickname === "ゲスト" || !currentPlayerId) {
         alert("ニックネームとパスコードを設定して、ランキングに挑戦しましょう！");
         await promptForNickname(true);
     }
@@ -157,7 +179,6 @@ async function promptForNickname(isInitialRegistration) {
             alert(`${finalName}さん、${isInitialRegistration ? '新規登録' : 'ログイン'}成功です！`);
             break; 
         } else {
-            // 失敗した場合は再入力またはゲスト続行を促す
             const retry = confirm("認証に失敗しました。再試行しますか？");
             if (!retry) {
                 currentPlayerNickname = "ゲスト";
@@ -180,7 +201,10 @@ async function registerPlayer(nickname, passcode) {
         const data = await response.json();
         
         if (!response.ok) {
-            alert(`認証失敗: ${data.message || 'サーバーエラー'}`);
+            console.error(`認証失敗: ${data.message || 'サーバーエラー'}`);
+            if (nickname !== '銀の焼き鳥') { // 銀の焼き鳥の失敗時はエラーメッセージを出さない
+                alert(`認証失敗: ${data.message || 'サーバーエラー'}`);
+            }
             throw new Error(data.message);
         }
         
@@ -209,7 +233,11 @@ function showScreen(screenName) {
     });
 }
 
-function startGame(initialData, isCountry, isCreation) {
+// ★ startGame関数修正: 盤面データをモードによって切り替える ★
+function startGame(isCountry, isCreation) {
+    // 盤面データの選択
+    const initialData = isCountry ? initialBoardData_Country : initialBoardData_Capital;
+
     initialPlayData = JSON.parse(JSON.stringify(initialData));
     boardData = JSON.parse(JSON.stringify(initialData));
     isCountryMode = isCountry;
@@ -222,15 +250,17 @@ function startGame(initialData, isCountry, isCreation) {
     const mode = isCountry ? 'country' : 'capital';
     const modeName = isCountry ? '国名ケシマス' : '首都名ケシマス';
     
-    document.getElementById('current-game-title').textContent = modeName;
+    // ★ タイトルと問題番号の表示修正 ★
+    document.getElementById('current-game-title').textContent = modeName; // 国名ケシマス or 首都名ケシマス
     
     const currentClearCount = playerStats[mode + '_clears'] || 0;
     const nextProblemNumber = currentClearCount + 1;
     
+    // 問題制作モードでプレイしている場合は「問題制作モード」と表示
     document.getElementById('problem-number-display').textContent = 
         isCreation ? '問題制作モード' : `第 ${nextProblemNumber} 問`;
         
-    // ★ 制作者名を表示するロジック (要望通り修正) ★
+    // ★ 制作者名を表示するロジック ★
     if (isCreation) {
         // 制作モードでプレイする場合、ログイン中のユーザー名を制作者名として表示
         document.getElementById('creator-display').textContent = `制作者: ${currentPlayerNickname}`;
@@ -342,7 +372,7 @@ function applyGravity() {
     }
 }
 
-/** セルクリックハンドラ (一直線選択リセットの修正済み) */
+/** セルクリックハンドラ */
 function handleCellClick(event) { 
     const r = parseInt(event.target.dataset.r);
     const c = parseInt(event.target.dataset.c);
@@ -469,7 +499,8 @@ eraseButton.addEventListener('click', async () => {
 });
 
 resetBtn.addEventListener('click', () => { 
-    startGame(initialPlayData, isCountryMode, isCreationPlay); 
+    // 盤面データはstartGame内でモードに応じて再取得される
+    startGame(isCountryMode, isCreationPlay); 
 });
 
 
@@ -546,11 +577,11 @@ btnInputComplete.addEventListener('click', () => {
     const isCountry = modeSelect.value === 'country';
 
     // 制作モードのstartGameは、currentPlayerNicknameを制作者名として使用
-    startGame(newBoard, isCountry, true); 
+    startGame(isCountry, true); 
 });
 
 
-// --- 5. ランキングロジック (変更なし) ---
+// --- 5. ランキングロジック ---
 
 const rankingScreen = document.getElementById('ranking-screen');
 const rankingTabs = document.getElementById('ranking-tabs');
@@ -590,10 +621,10 @@ async function fetchAndDisplayRanking(type) {
 // --- 6. イベントリスナーの設定 ---
 
 document.getElementById('btn-country-mode').addEventListener('click', () => {
-    startGame(initialBoardData_Standard, true, false); 
+    startGame(true, false); // isCountry=true, isCreation=false
 });
 document.getElementById('btn-capital-mode').addEventListener('click', () => {
-    startGame(initialBoardData_Standard, false, false);
+    startGame(false, false); // isCountry=false, isCreation=false
 });
 document.getElementById('btn-create-mode').addEventListener('click', () => {
     // ゲストユーザーは問題制作モードを利用できないようにする
