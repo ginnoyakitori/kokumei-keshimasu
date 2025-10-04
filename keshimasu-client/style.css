@@ -1,5 +1,5 @@
 /* ---------------------------------------------------- */
-/* CSSコード - style.css (最終版: 盤面最大化修正済み) */
+/* CSSコード - style.css (最終版: ワードリスト1列表示修正済み) */
 /* ---------------------------------------------------- */
 
 body {
@@ -414,4 +414,103 @@ h2 {
     margin-top: 15px;
     font-size: 1.1em;
     color: #aaa;
+}
+
+/* --- ワードリスト画面 --- */
+.word-list-note {
+    font-size: 0.9em;
+    color: #aaa;
+    margin-bottom: 15px;
+}
+
+#word-list-tabs button {
+    padding: 8px 15px;
+    margin: 5px;
+    background-color: #383838;
+    color: #ccc;
+    border: 1px solid #555;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.1s, color 0.1s;
+}
+
+#word-list-tabs button.active {
+    background-color: #FFD700;
+    color: #1c1c1c;
+    border-color: #FFD700;
+    font-weight: bold;
+}
+
+.word-list-grid {
+    display: grid;
+    /* ★★★ 修正箇所: 1列表示に変更 ★★★ */
+    grid-template-columns: 1fr; 
+    gap: 8px; /* 縦の隙間を調整 */
+    padding: 15px;
+    background-color: #333;
+    border-radius: 8px;
+    max-height: 400px; /* 縦スクロール可能にする */
+    overflow-y: auto;
+    border: 1px solid #555;
+}
+
+.word-item {
+    background-color: #444;
+    color: #f0f0f0;
+    padding: 10px 10px; /* 縦横のパディングを増やして大きく見せる */
+    border-radius: 4px;
+    font-size: 1.0em; /* フォントサイズをわずかに大きく */
+    font-weight: bold;
+    text-align: left; /* 左寄せに変更 */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    border-left: 5px solid #FFD700; /* 境界線を太く */
+}
+
+/* --- ホーム画面 ルール説明 --- */
+.game-rules {
+    background-color: #383838;
+    border: 1px solid #555;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 25px;
+    text-align: left;
+}
+
+.game-rules h3 {
+    color: #FFD700;
+    font-size: 1.4em;
+    margin-top: 0;
+    border-bottom: 2px dashed #444;
+    padding-bottom: 5px;
+    margin-bottom: 10px;
+}
+
+.game-rules p {
+    font-size: 0.9em;
+    color: #ccc;
+    margin-top: 0;
+    margin-bottom: 10px;
+}
+
+.rule-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.rule-list li {
+    font-size: 0.9em;
+    color: #f0f0f0;
+    line-height: 1.6;
+    margin-left: 10px;
+    position: relative;
+}
+
+.rule-list li::before {
+    content: '▶';
+    color: #FFD700;
+    font-size: 0.8em;
+    margin-right: 5px;
 }

@@ -11,8 +11,20 @@
         <h1 id="app-title">国名・首都名ケシマス</h1>
 
         <div id="home-screen" class="screen">
-            <p>ルール：縦または横に連続する文字を国名または首都名にすることで消去できます。Fは自由な一文字に置き換えられます。全ての文字を消去してクリアを目指しましょう！</p>
             
+            <div class="game-rules">
+                <h3>ゲームルール</h3>
+                <p>8×5マスの盤面（表示は5×5）の全40文字を消去してクリアを目指すパズルゲームです。</p>
+                
+                <ul class="rule-list">
+                    <li>消去条件: 盤面上の文字を、左から右 または 上から下 に向かって一直線に選択し、その文字列を国名（または**首都名**）にすることで消去できます。</li>
+                    <li>ワイルドカード: 文字「F」は任意のカタカナ一文字として使用可能です。</li>
+                    <li>制限:同じワードは2回以上使えません。</li>
+                    <li>重力: 文字を消去すると、その上の文字が下に落下します。</li>
+                    <li>出題順: 未クリアの問題のうち、登録日時が古いものから出題されます。</li>
+                    <li>リセット: 消し方を間違えた場合、リセットボタンで最初の盤面に戻れます。</li>
+                </ul>
+            </div>
             <div class="mode-selection">
                 <div class="mode-card">
                     <h2>国名ケシマス</h2>
@@ -36,6 +48,11 @@
                     <button id="btn-ranking">ランキングを見る</button>
                 </div>
             </div>
+
+            <button id="btn-word-list" class="secondary-btn" style="margin-top: 20px;">
+                利用可能な国名・首都名一覧
+            </button>
+            
         </div>
 
         <div id="main-game-screen" class="screen" style="display:none;">
@@ -92,6 +109,21 @@
             <div id="ranking-list-container">
                 </div>
             <button id="btn-ranking-back" class="secondary-btn">ホームに戻る</button>
+        </div>
+
+        <div id="word-list-screen" class="screen" style="display:none;">
+            <h2>利用可能ワード一覧</h2>
+            <p class="word-list-note">（サーバーから取得した国名/首都名が表示されます）</p>
+
+            <div id="word-list-tabs">
+                <button data-type="country" class="active">国名リスト</button>
+                <button data-type="capital">首都名リスト</button>
+            </div>
+
+            <div id="word-list-content" class="word-list-grid">
+                </div>
+
+            <button id="btn-word-list-back" class="secondary-btn" style="margin-top: 20px;">ホームに戻る</button>
         </div>
         
     </div>

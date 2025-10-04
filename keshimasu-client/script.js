@@ -1,5 +1,6 @@
+// keshimasu-client/script.js
 // ----------------------------------------------------
-// フロントエンド JavaScript コード - script.js (問題登録・タイトル修正版)
+// フロントエンド JavaScript コード - script.js (最終版)
 // ----------------------------------------------------
 
 // ★★★ 🚨 要修正 ★★★
@@ -10,6 +11,7 @@ const API_BASE_URL = 'https://kokumei-keshimasu.onrender.com/api';
 
 // サーバーから動的にロードされる問題リスト
 let allPuzzles = { country: [], capital: [] }; 
+
 // 辞書データ (テスト用) - カタカナを使用
 const COUNTRY_DICT = [
   "アイスランド","アイルランド","アゼルバイジャン","アフガニスタン","アメリカ",
@@ -81,14 +83,17 @@ const screens = {
     home: document.getElementById('home-screen'),
     mainGame: document.getElementById('main-game-screen'),
     create: document.getElementById('create-puzzle-screen'),
-    ranking: document.getElementById('ranking-screen') 
+    ranking: document.getElementById('ranking-screen'),
+    wordList: document.getElementById('word-list-screen') // ワードリスト画面を追加
 };
-const appTitleElement = document.getElementById('app-title'); // メインタイトル要素
+const appTitleElement = document.getElementById('app-title'); 
 const boardElement = document.getElementById('board');
 const eraseButton = document.getElementById('erase-button');
 const createBoardElement = document.getElementById('create-board');
 const btnInputComplete = document.getElementById('btn-input-complete');
 const resetBtn = document.getElementById('reset-button');
+const wordListContent = document.getElementById('word-list-content');
+const wordListTabs = document.getElementById('word-list-tabs');
 
 
 // --- ユーティリティ関数 ---
@@ -161,8 +166,9 @@ async function setupPlayer() {
     const defaultPasscode = '0425';
 
     if (currentPlayerNickname === defaultNickname && currentPlayerId) {
-        await registerPlayer(defaultNickname, defaultPasscode);
+        // デフォルトユーザーとしてログイン済み
     } else if (currentPlayerNickname === "ゲスト" && !localStorage.getItem('default_user_checked')) {
+        // 初回起動時、デフォルトユーザーの存在確認
         localStorage.setItem('default_user_checked', 'true');
         await registerPlayer(defaultNickname, defaultPasscode);
     }
@@ -749,6 +755,42 @@ async function fetchAndDisplayRanking(type) {
 }
 
 
+// --- 5.5. ワードリスト表示ロジック ---
+
+/**
+ * 利用可能な国名または首都名のリストを画面に描画する
+ */
+function displayWordList(type) {
+    // 辞書を選択
+    const dictionary = (type === 'country') ? COUNTRY_DICT : CAPITAL_DICT;
+    
+    // タブのCSSを更新
+    wordListTabs.querySelectorAll('button').forEach(btn => {
+        if (btn.dataset.type === type) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+
+    // リストの描画
+    wordListContent.innerHTML = '';
+    dictionary.sort((a, b) => {
+        // 文字列の長さでソートし、同じ長さなら辞書順
+        if (a.length !== b.length) {
+            return a.length - b.length;
+        }
+        return a.localeCompare(b);
+    });
+    
+    dictionary.forEach(word => {
+        const item = document.createElement('div');
+        item.classList.add('word-item');
+        item.textContent = word;
+        wordListContent.appendChild(item);
+    });
+}
+
 // --- 6. イベントリスナーの設定 ---
 
 document.getElementById('btn-country-mode').addEventListener('click', () => {
@@ -773,6 +815,21 @@ document.getElementById('btn-ranking').addEventListener('click', () => {
     fetchAndDisplayRanking('total');
 });
 
+// ワードリストボタンのリスナー
+document.getElementById('btn-word-list').addEventListener('click', () => {
+    showScreen('wordList');
+    // 初期表示は国名リスト
+    displayWordList('country'); 
+});
+
+// ワードリストタブのリスナー
+wordListTabs.addEventListener('click', (event) => {
+    if (event.target.tagName === 'BUTTON') {
+        displayWordList(event.target.dataset.type);
+    }
+});
+
+// 画面遷移ボタン
 document.getElementById('btn-back-to-home').addEventListener('click', () => {
     showScreen('home');
 });
@@ -782,11 +839,8 @@ document.getElementById('btn-create-back').addEventListener('click', () => {
 document.getElementById('btn-ranking-back').addEventListener('click', () => {
     showScreen('home');
 });
-
-rankingTabs.addEventListener('click', (event) => {
-    if (event.target.tagName === 'BUTTON') {
-        fetchAndDisplayRanking(event.target.dataset.type);
-    }
+document.getElementById('btn-word-list-back').addEventListener('click', () => {
+    showScreen('home');
 });
 
 // 初期化
