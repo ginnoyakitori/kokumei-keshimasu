@@ -2,8 +2,9 @@
 // PostgreSQLのテーブルを初期化するためのスクリプト
 
 const db = require('./db');
-const COUNTRY_PUZZLES = require('./data/country_words.json');
-const CAPITAL_PUZZLES = require('./data/capital_words.json');
+// 初期パズルのデータ構造が { data: [...], creator: "..." } であることを前提とする
+const COUNTRY_PUZZLES = require('./data/country_puzzles.json');
+const CAPITAL_PUZZLES = require('./data/capital_puzzles.json');
 
 /**
  * データベースを初期化し、必要なテーブルを作成する。
@@ -44,16 +45,25 @@ async function initializeDatabase() {
         if (puzzleCount === 0) {
             console.log('ℹ️ Initializing puzzles...');
 
-            const allInitialPuzzles = [
-                ...COUNTRY_PUZZLES.map(p => ({ mode: 'country', ...p })),
-                ...CAPITAL_PUZZLES.map(p => ({ mode: 'capital', ...p }))
-            ];
+            // ★修正点: 初期パズルのデータ構造をデータベースの列名に合わせてマッピングする
+            const countryPuzzles = COUNTRY_PUZZLES.map(p => ({ 
+                mode: 'country', 
+                board_data: p.data, // JSONファイルの "data" を DBの "board_data" にマッピング
+                creator: p.creator 
+            }));
+            const capitalPuzzles = CAPITAL_PUZZLES.map(p => ({ 
+                mode: 'capital', 
+                board_data: p.data, 
+                creator: p.creator 
+            }));
+
+            const allInitialPuzzles = [...countryPuzzles, ...capitalPuzzles];
             
             for (const puzzle of allInitialPuzzles) {
-                // board_data は JSONB 型に格納するため、文字列化せずオブジェクトのままクエリに渡します
+                // board_data は JSONB 型に格納するため、オブジェクトのまま渡す
                 await db.query(
                     'INSERT INTO puzzles (mode, board_data, creator) VALUES ($1, $2, $3)',
-                    [puzzle.mode, puzzle.data, puzzle.creator]
+                    [puzzle.mode, puzzle.board_data, puzzle.creator]
                 );
             }
             console.log(`✅ ${allInitialPuzzles.length} initial puzzles inserted.`);
