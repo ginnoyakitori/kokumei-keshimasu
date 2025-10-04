@@ -1,5 +1,5 @@
 // ----------------------------------------------------
-// フロントエンド JavaScript コード - script.js (最終修正版)
+// フロントエンド JavaScript コード - script.js (フルコード)
 // ----------------------------------------------------
 
 // ★★★ 🚨 要修正 ★★★
@@ -350,10 +350,10 @@ function startGame(isCountry, isCreation) {
     
     const modeName = isCountry ? '国名ケシマス' : '首都名ケシマス';
     
-    // ★★★ 修正箇所 1: 一番上のタイトルを変更 ★★★
+    // 一番上のタイトルを変更
     document.getElementById('current-game-title').textContent = modeName; 
     
-    // ★★★ 修正箇所 2: 問題番号の表示を「クリア数 + 1」に戻す ★★★
+    // 問題番号の表示を「クリア数 + 1」に戻す
     const currentClearCount = playerStats[mode + '_clears'] || 0;
     const nextProblemNumber = currentClearCount + 1;
     
@@ -373,14 +373,14 @@ function startGame(isCountry, isCreation) {
     document.getElementById('creator-display').textContent = `制作者: ${creatorName}`;
         
     updateStatusDisplay();
-    // ★★★ 修正箇所 3: 盤面表示を5行に戻す ★★★
+    // 盤面表示を5行に戻す
     renderBoard(5); 
     showScreen('mainGame');
 }
 
 function renderBoard(visibleRows) { 
     boardElement.innerHTML = '';
-    // ★★★ 修正箇所 3: 盤面表示を visibleRows (通常5行) に基づいて行う ★★★
+    // 盤面表示を visibleRows (通常5行) に基づいて行う
     const startRow = boardData.length - visibleRows; 
     
     for (let r = startRow; r < boardData.length; r++) {
@@ -609,10 +609,15 @@ eraseButton.addEventListener('click', async () => {
 });
 
 resetBtn.addEventListener('click', () => { 
-    // リセットボタンを押したときは、現在出題中の問題でリセットする
+    // リセットボタンを押したときの処理
     if (isCreationPlay) {
-        // 制作モードのリセット
-        startGame(isCountryMode, true);
+        // 制作モードの場合、制作画面に戻る
+        showScreen('create');
+        
+        // 元々入力完了後に押せるようになっていたボタンを有効に戻す
+        btnInputComplete.disabled = false;
+        document.getElementById('create-status').textContent = '入力完了！解答を開始できます。';
+        
     } else if (currentPuzzleIndex !== -1) {
         // 標準問題のリセット
         const problemList = isCountryMode ? initialBoardData_Country_List : initialBoardData_Capital_List;
