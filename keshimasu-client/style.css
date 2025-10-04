@@ -1,195 +1,126 @@
+/* ----------------------------------------------------
+ * フロントエンド CSS コード - style.css
+ * ---------------------------------------------------- */
 body {
-    font-family: 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-    background-color: #e6f7ff;
+    font-family: Arial, sans-serif;
+    background-color: #f4f4f4;
+    color: #333;
+    padding: 0;
     margin: 0;
 }
 
 #game-container {
-    background: #ffffff;
-    padding: 30px;
-    border-radius: 15px;
-    box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+    max-width: 800px; /* 最大幅を指定 */
+    margin: 20px auto; /* 上下20px、左右中央揃え */
+    padding: 20px;
+    border: 1px solid #ccc;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    background-color: #fff;
     text-align: center;
-    width: 380px;
 }
 
 h1 {
-    color: #1d3557;
-    margin-bottom: 20px;
+    color: #007bff;
+    border-bottom: 2px solid #007bff;
+    padding-bottom: 10px;
 }
 
-/* 5x5 プレイボード */
-#board {
-    display: grid;
-    grid-template-columns: repeat(5, 65px);
-    grid-template-rows: repeat(5, 65px);
-    border: 3px solid #1d3557;
-    background-color: #fff;
-    margin: 0 auto 20px;
-}
-
-.cell {
-    width: 65px;
-    height: 65px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-size: 26px;
-    font-weight: bold;
-    color: #1d3557;
-    border: 1px solid #a8dadc;
-    cursor: pointer;
-    transition: background-color 0.15s, transform 0.15s;
-}
-
-.cell:hover:not(.empty) {
-    background-color: #f1faee;
-}
-
-.selected {
-    background-color: #457b9d !important;
-    color: white;
-    transform: scale(1.05);
-}
-
-.cell.empty {
-    background-color: #f1faee;
-    cursor: default;
-}
-
-/* ホーム・コントロールボタン */
-#home-screen button, #ranking-tabs button {
+/* --- ボタンとホーム画面 --- */
+#home-screen button, #controls button, #ranking-tabs button {
     display: block;
     width: 80%;
     margin: 15px auto;
-    padding: 15px;
-    font-size: 18px;
-    border: none;
-    border-radius: 10px;
+    padding: 15px 20px;
+    font-size: 1.2em;
     cursor: pointer;
-    background-color: #a8dadc;
-    color: #1d3557;
-    transition: background-color 0.2s;
-}
-#home-screen button:hover, #ranking-tabs button:hover {
-    background-color: #457b9d;
-    color: white;
-}
-
-#controls, #create-controls {
-    margin: 20px 0;
-}
-#controls button {
-    padding: 10px 15px;
-    margin: 0 5px;
-    font-size: 14px;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background-color 0.2s;
-}
-
-#erase-button {
-    background-color: #e63946;
-    color: white;
-}
-#erase-button:disabled {
-    background-color: #f8d4d8;
-    cursor: default;
-}
-
-#reset-button {
-    background-color: #ffb703;
-    color: #333;
-}
-#btn-back-to-home, #btn-create-back, #btn-ranking-back {
-    margin-top: 15px;
-    background-color: #ccc;
-    color: #333;
-    padding: 8px 15px;
     border: none;
     border-radius: 5px;
-    cursor: pointer;
+    background-color: #28a745;
+    color: white;
+    transition: background-color 0.2s;
 }
 
-#status {
-    margin-top: 15px;
-    text-align: left;
+#home-screen button:hover, #controls button:hover, #ranking-tabs button:hover {
+    background-color: #1e7e34;
+}
+
+#ranking-tabs button {
+    display: inline-block;
+    width: 30%;
     padding: 10px;
-    border: 1px dashed #457b9d;
-    border-radius: 5px;
-    font-size: 14px;
+    margin: 5px;
+    background-color: #007bff;
 }
 
-/* 問題制作モード用の8x5グリッドスタイル */
-.create-grid {
+#ranking-tabs button:hover {
+    background-color: #0056b3;
+}
+
+/* --- 盤面グリッド --- */
+.board-grid, .create-grid {
     display: grid;
-    grid-template-columns: repeat(5, 50px);
-    grid-template-rows: repeat(8, 50px);
-    border: 3px solid #1d3557;
-    background-color: #fff;
-    margin: 20px auto;
-    width: fit-content;
+    /* 5列、最小60pxで柔軟な幅を設定 */
+    grid-template-columns: repeat(5, minmax(60px, 1fr)); 
+    gap: 5px; 
+    margin: 20px auto; 
+    max-width: 325px; /* 5セル * 60px + 4ギャップ * 5px = 320px + α */
+    border: 1px solid #ddd;
+    padding: 5px;
+    background-color: #eee;
 }
 
-.create-cell {
-    width: 50px;
-    height: 50px;
+.cell, .create-cell {
+    width: 60px;  /* セルの固定幅 */
+    height: 60px; /* セルの高さ */
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 20px;
+    font-size: 2em;
     font-weight: bold;
-    border: 1px solid #a8dadc;
+    border: 1px solid #aaa;
+    background-color: #fff;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.1s;
 }
 
-/* 問題制作モードの入力欄 */
+.cell:hover:not(.selected):not(.empty) {
+    background-color: #f0f0ff;
+}
+
+.cell.selected {
+    background-color: #ffc107; /* 選択中の色 */
+}
+
+.cell.empty {
+    background-color: #ddd;
+    cursor: default;
+    border-color: #ccc;
+}
+
+/* --- 問題制作モード --- */
 .create-input {
-    width: 48px;
-    height: 48px;
+    width: 50px; 
+    height: 50px; 
     text-align: center;
-    font-size: 20px;
+    font-size: 1.8em; 
     border: none;
-    padding: 0;
-    margin: 0;
-    box-sizing: border-box;
     outline: none;
-}
-#creation-mode-select {
-    padding: 10px;
-    margin-right: 10px;
+    background-color: transparent;
+    text-transform: uppercase;
 }
 
-/* ランキングスタイル */
-#ranking-tabs {
-    display: flex;
-    justify-content: space-around;
-    width: 100%;
-    margin: 15px 0;
-}
-#ranking-tabs button {
-    width: 30%;
-    padding: 8px;
-    font-size: 14px;
-}
-#ranking-list-container {
-    padding: 10px;
-}
+/* --- ランキング --- */
 #ranking-list-container table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 10px;
+    margin-top: 15px;
 }
 #ranking-list-container th, #ranking-list-container td {
-    border: 1px solid #ccc;
+    border: 1px solid #ddd;
     padding: 8px;
-    text-align: center;
-    font-size: 14px;
+    text-align: left;
 }
 #ranking-list-container th {
-    background-color: #f1faee;
+    background-color: #f2f2f2;
 }
