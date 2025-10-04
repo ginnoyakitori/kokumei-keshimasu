@@ -10,21 +10,23 @@
     <div id="app-container">
         <h1 id="app-title">国名・首都名ケシマス</h1>
 
-        <div id="auth-screen" class="screen">
-            <h2>ようこそ！</h2>
-            <p id="auth-message">ニックネームとパスコードを入力して、ログインまたは初回登録をしてください。</p>
-            
-            <div class="auth-form">
-                <input type="text" id="input-nickname" placeholder="ニックネーム (10文字以内)" maxlength="10">
-                <input type="password" id="input-passcode" placeholder="パスコード" maxlength="20">
-                
-                <button id="btn-auth-submit">ログイン/新規登録</button>
-            </div>
-            
-            <button id="btn-play-as-guest" class="secondary-btn" style="margin-top: 15px;">
-                ゲストとしてプレイ（スコアは保存されません）
-            </button>
+        <section id="auth-screen" style="display: block;">
+    <h2>ケシマス 認証</h2>
+    <div class="auth-box">
+        <label for="input-nickname">ニックネーム (10文字まで):</label>
+        <input type="text" id="input-nickname" maxlength="10" required>
+        
+        <label for="input-passcode">パスコード (認証用):</label>
+        <input type="password" id="input-passcode" required>
+
+        <div class="auth-buttons">
+            <button id="btn-login-submit" class="auth-button primary">ログイン</button>
+            <button id="btn-register-submit" class="auth-button secondary">新規登録</button>
         </div>
+
+        <button id="btn-play-as-guest" class="guest-button">ゲストとしてプレイ (スコア非保存)</button>
+    </div>
+</section>
         <div id="home-screen" class="screen" style="display:none;">
             
             <p id="welcome-message" style="font-weight: bold; font-size: 1.1em; color: #FFD700; margin-bottom: 20px;">
