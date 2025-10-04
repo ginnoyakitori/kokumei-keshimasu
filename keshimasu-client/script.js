@@ -1,6 +1,6 @@
 // keshimasu-client/script.js
 // ----------------------------------------------------
-// フロントエンド JavaScript コード - script.js (最終版: 認証画面、ルール表示、ワードリスト1列表示対応)
+// フロントエンド JavaScript コード - script.js (最終版: 認証画面、ルール表示、問題番号同期修正済み)
 // ----------------------------------------------------
 
 // ★★★ 🚨 要修正 ★★★
@@ -12,7 +12,8 @@ const API_BASE_URL = 'https://kokumei-keshimasu.onrender.com/api';
 // サーバーから動的にロードされる問題リスト
 let allPuzzles = { country: [], capital: [] }; 
 
-// ゲームで使用する辞書 (サーバーで管理されているものと同じ内容)
+// ゲームで使用する辞書 (サーバーで管理されているものと同じ内容を仮置き)
+// サーバーから辞書データが取得できない場合に備えて残しています
 // 辞書データ (テスト用) - カタカナを使用
 const COUNTRY_DICT = [
   "アイスランド","アイルランド","アゼルバイジャン","アフガニスタン","アメリカ",
@@ -128,7 +129,8 @@ function isValidGameChar(char) {
  * LocalStorageからクリアした問題のIDリストを取得する
  */
 function getClearedPuzzles(mode) {
-    const key = `cleared_puzzles_${mode}_id`;
+    // プレイヤーごとにIDリストを管理するため、IDを含めたキーを使用
+    const key = `cleared_puzzles_${mode}_id_${currentPlayerId || 'guest'}`;
     const cleared = localStorage.getItem(key);
     return cleared ? JSON.parse(cleared) : [];
 }
@@ -137,7 +139,7 @@ function getClearedPuzzles(mode) {
  * LocalStorageにクリアした問題のIDを記録する
  */
 function markPuzzleAsCleared(mode, puzzleId) {
-    const key = `cleared_puzzles_${mode}_id`;
+    const key = `cleared_puzzles_${mode}_id_${currentPlayerId || 'guest'}`;
     let cleared = getClearedPuzzles(mode);
     if (!cleared.includes(puzzleId)) {
         cleared.push(puzzleId);
@@ -319,14 +321,20 @@ function startGame(isCountry, isCreation) {
         // サーバーから取得した問題はtimestamp順にソートされているため、先頭が最も古い未クリア問題
         const selectedPuzzle = availablePuzzles[0];
         
-        // 問題リスト内でのインデックスを再計算
+        // 問題リスト内でのインデックスを取得
         currentPuzzleIndex = problemList.findIndex(p => p.id === selectedPuzzle.id);
         
         // 選択された問題データを取得
         initialPlayData = JSON.parse(JSON.stringify(selectedPuzzle.data));
         boardData = JSON.parse(JSON.stringify(selectedPuzzle.data));
+        
+        // ★★★ 修正箇所: 表示される問題番号をローカルのクリア数に同期 ★★★
+        const nextProblemNumber = clearedIds.length + 1;
+        document.getElementById('problem-number-display').textContent = `第 ${nextProblemNumber} 問`;
+        
     } else {
         currentPuzzleIndex = -1; 
+        document.getElementById('problem-number-display').textContent = '問題制作モード'; 
     }
 
     isCountryMode = isCountry;
@@ -340,14 +348,6 @@ function startGame(isCountry, isCreation) {
     
     document.getElementById('current-game-title').textContent = modeName; 
     
-    const currentClearCount = playerStats[mode + '_clears'] || 0;
-    const nextProblemNumber = currentClearCount + 1;
-    
-    document.getElementById('problem-number-display').textContent = 
-        isCreation 
-        ? '問題制作モード' 
-        : `第 ${nextProblemNumber} 問`; 
-        
     let creatorName = '銀の焼き鳥'; 
     if (isCreation) {
         creatorName = currentPlayerNickname;
@@ -396,6 +396,7 @@ function updateStatusDisplay() {
 }
 
 async function updatePlayerScore(mode) {
+    // ゲストプレイまたは制作モードではランキングスコアは更新しない
     if (!currentPlayerId || isCreationPlay) {
         return;
     }
@@ -464,12 +465,16 @@ async function checkGameStatus() {
             const currentPuzzle = problemList[currentPuzzleIndex];
             
             if (currentPuzzle && currentPuzzle.id) {
-                markPuzzleAsCleared(mode, currentPuzzle.id); // LocalStorageにIDでクリアを記録
+                // ローカルのクリア記録を確実に行う
+                markPuzzleAsCleared(mode, currentPuzzle.id); 
             }
 
+            // スコアを更新し、最新の統計情報を取得
             await updatePlayerScore(mode); 
-            const nextClearCount = playerStats[mode + '_clears'];
-            alert(`🎉 全ての文字を消去しました！クリアです！\nあなたの${modeName}クリア数は${nextClearCount}問になりました。`);
+            
+            const localClearedCount = getClearedPuzzles(mode).length;
+            
+            alert(`🎉 全ての文字を消去しました！クリアです！\nあなたの${modeName}クリア数は${localClearedCount}問になりました。`);
         } else {
             // 制作モードのクリア処理で問題登録を呼び出す
             const registrationConfirmed = confirm("🎉 作成した問題をクリアしました！\nこの問題を標準問題として登録しますか？");
@@ -633,11 +638,13 @@ eraseButton.addEventListener('click', async () => {
 
 resetBtn.addEventListener('click', () => { 
     if (isCreationPlay) {
+        // 制作モードの解答中にリセットボタンを押すと、入力完了前の画面に戻る
         showScreen('create');
         btnInputComplete.disabled = false;
         document.getElementById('create-status').textContent = '入力完了！解答を開始できます。';
         
     } else if (currentPuzzleIndex !== -1) {
+        // 標準問題のリセット
         const problemList = isCountryMode ? allPuzzles.country : allPuzzles.capital;
         const selectedPuzzle = problemList[currentPuzzleIndex];
         
@@ -818,6 +825,7 @@ inputPasscode.addEventListener('keypress', (e) => {
 document.getElementById('btn-play-as-guest').addEventListener('click', async () => {
     currentPlayerNickname = "ゲスト";
     currentPlayerId = null;
+    // ゲストの場合、ローカルストレージの認証情報をクリア
     localStorage.removeItem('player_id');
     localStorage.removeItem('keshimasu_nickname');
     alert("ゲストとしてゲームを開始します。スコアは保存されません。");
