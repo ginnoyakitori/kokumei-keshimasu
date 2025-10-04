@@ -207,15 +207,22 @@ async function registerPlayer(nickname, passcode) {
 
 // --- 2. 画面表示と初期化 ---
 
+/**
+ * 画面を表示し、メインタイトルの表示を制御する
+ */
 function showScreen(screenName) {
     Object.keys(screens).forEach(key => {
         screens[key].style.display = (key === screenName) ? 'block' : 'none';
     });
+    
+    // ★★★ 修正箇所 5: ホーム画面でのみメインタイトルを表示 ★★★
     if (screenName === 'home') {
+        appTitleElement.style.display = 'block';
         updateHomeProblemCount();
+    } else {
+        appTitleElement.style.display = 'none';
     }
 }
-
 /**
  * ホーム画面に問題数を表示する
  */

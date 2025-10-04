@@ -1,12 +1,11 @@
 /* ---------------------------------------------------- */
-/* CSSコード - style.css (豪華版 - マス幅修正済み) */
+/* CSSコード - style.css (豪華版 - タイトル表示修正済み) */
 /* ---------------------------------------------------- */
 
 body {
-    /* 豪華な雰囲気のため、暗めの背景に変更 */
     font-family: 'Arial', sans-serif;
-    background-color: #1c1c1c; /* ほぼ黒 */
-    color: #f0f0f0; /* 明るいテキストカラー */
+    background-color: #1c1c1c; 
+    color: #f0f0f0; 
     margin: 0;
     padding: 0;
     display: flex;
@@ -18,21 +17,35 @@ body {
 }
 
 #app-container {
-    background-color: #2c2c2c; /* ダークグレーの背景 */
+    background-color: #2c2c2c; 
     padding: 35px;
     border-radius: 15px;
-    /* 豪華な金の縁取り風のシャドウ */
     box-shadow: 
-        0 0 20px rgba(0, 0, 0, 0.5), /* 濃い影 */
-        0 0 0 4px #FFD700; /* ゴールドの縁 */
+        0 0 20px rgba(0, 0, 0, 0.5), 
+        0 0 0 4px #FFD700; 
     width: 100%;
     max-width: 500px;
     text-align: center;
     border: 1px solid #444;
 }
 
-h1 {
-    /* タイトルにゴールドの影と強調 */
+/* ★★★ 修正箇所 2: メインタイトルのスタイルと、表示・非表示の制御 ★★★ */
+#app-title {
+    color: #FFD700;
+    font-family: 'Georgia', serif;
+    font-size: 2.5em;
+    margin-bottom: 25px;
+    border-bottom: 2px solid #555;
+    padding-bottom: 10px;
+    text-shadow: 0 0 5px rgba(255, 215, 0, 0.7);
+    display: block; /* デフォルトで表示 */
+}
+
+/* JavaScriptで#home-screenが表示されていないときに#app-titleを隠す */
+/* (今回はJavaScriptではなくCSSで制御します) */
+
+/* メインタイトルと画面表示の連動をJSで制御するため、CSSはシンプルに */
+h1 { /* #app-title のスタイルを流用 */
     color: #FFD700;
     font-family: 'Georgia', serif;
     font-size: 2.5em;
@@ -41,6 +54,8 @@ h1 {
     padding-bottom: 10px;
     text-shadow: 0 0 5px rgba(255, 215, 0, 0.7);
 }
+/* ★★★ 修正箇所 2 ここまで ★★★ */
+
 
 h2 {
     color: #dcdcdc;
@@ -63,14 +78,13 @@ h2 {
 }
 
 .mode-card {
-    background-color: #383838; /* カード背景を濃く */
+    background-color: #383838; 
     border: 1px solid #555;
     border-radius: 10px;
     padding: 20px;
     width: 90%; 
     max-width: 350px; 
     text-align: center;
-    /* カードにも深みのあるシャドウ */
     box-shadow: 0 8px 15px rgba(0, 0, 0, 0.6);
     transition: transform 0.2s, box-shadow 0.2s;
     display: flex;
@@ -80,7 +94,6 @@ h2 {
 
 .mode-card:hover {
     transform: translateY(-4px);
-    /* ホバー時にゴールドの光を追加 */
     box-shadow: 0 10px 20px rgba(0, 0, 0, 0.8), 0 0 8px #FFD700;
 }
 
@@ -93,16 +106,14 @@ h2 {
 .mode-card button {
     width: 100%;
     padding: 12px;
-    /* プライマリボタンをゴールドとダークグレーのグラデーションに */
     background: linear-gradient(145deg, #FFD700, #c0a800);
-    color: #1c1c1c; /* ボタンの文字は暗く */
+    color: #1c1c1c; 
     border: none;
     border-radius: 6px;
     cursor: pointer;
     font-size: 1em;
     font-weight: bold;
     margin-bottom: 8px; 
-    /* 立体感を出すためのシャドウ */
     box-shadow: 0 4px #a08800;
     transition: all 0.1s;
 }
@@ -127,7 +138,7 @@ h2 {
 
 .problem-count-display {
     font-size: 0.9em;
-    color: #FFD700; /* ゴールドで強調 */
+    color: #FFD700; 
     font-weight: bold;
     display: block; 
     margin-top: 5px;
@@ -161,15 +172,28 @@ h2 {
     border: 1px solid #555;
 }
 
-/* ゲーム盤面スタイル */
+/* ★★★ 修正箇所 3: 第N問目の表示を大きくする ★★★ */
+#problem-number-display {
+    font-size: 1.2em; /* 標準のinfo-tagより大きく */
+    font-weight: bold;
+    color: #FFD700; /* ゴールドで強調 */
+    background-color: #1c1c1c; /* 暗い背景色 */
+    padding: 6px 10px;
+    border: 2px solid #FFD700; /* ゴールドの縁取り */
+    border-radius: 6px;
+}
+/* ★★★ 修正箇所 3 ここまで ★★★ */
+
+
+/* ゲーム盤面スタイル (省略) */
 .board-grid {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
     width: 100%;
     max-width: 300px; 
     margin: 20px auto;
-    border: 3px solid #FFD700; /* ゴールドの縁取り */
-    box-shadow: 0 0 10px rgba(255, 215, 0, 0.5); /* 発光エフェクト */
+    border: 3px solid #FFD700; 
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.5); 
 }
 
 .cell {
@@ -177,10 +201,10 @@ h2 {
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 1.4em; /* 文字を大きく */
+    font-size: 1.4em; 
     font-weight: 900;
     height: 60px; 
-    background-color: #333; /* 暗いセル背景 */
+    background-color: #333; 
     color: #f0f0f0;
     cursor: pointer;
     user-select: none;
@@ -192,16 +216,16 @@ h2 {
 }
 
 .cell.empty {
-    background-color: #2c2c2c; /* アプリ背景と同じ色 */
+    background-color: #2c2c2c; 
     cursor: default;
 }
 
 .cell.selected {
-    background-color: #FFD700; /* 選択色をゴールドに */
-    color: #1c1c1c; /* 選択された文字色を暗く */
+    background-color: #FFD700; 
+    color: #1c1c1c; 
 }
 
-/* --- コントロールパネル --- */
+/* --- コントロールパネル (省略) --- */
 .control-panel, .status-panel {
     border-top: 1px solid #444;
     padding-top: 15px;
@@ -223,7 +247,6 @@ h2 {
     transition: background-color 0.2s, box-shadow 0.1s;
 }
 
-/* 消去ボタン (プライマリ) */
 #erase-button {
     background: linear-gradient(145deg, #e30000, #a00000);
     color: white;
@@ -246,7 +269,6 @@ h2 {
     cursor: not-allowed;
 }
 
-/* セカンダリボタン (リセット、ホームに戻る) */
 .secondary-btn {
     background: linear-gradient(145deg, #5c5c5c, #404040);
     color: #ccc;
@@ -269,11 +291,11 @@ h2 {
 }
 
 #used-words-display {
-    color: #FFD700; /* 使用済みワードをゴールドで強調 */
+    color: #FFD700; 
     font-weight: bold;
 }
 
-/* --- 制作画面 --- */
+/* --- 制作画面 (省略) --- */
 .create-controls {
     display: flex;
     flex-direction: column;
@@ -295,7 +317,6 @@ h2 {
 }
 
 #btn-input-complete {
-    /* 制作完了ボタンもゴールド強調 */
     background: linear-gradient(145deg, #5cb85c, #3f8342);
     color: white;
     box-shadow: 0 4px #2a612d;
@@ -316,17 +337,15 @@ h2 {
     margin-bottom: 15px;
 }
 
-/* ★★★ 修正箇所: 制作盤面の幅を修正 ★★★ */
 .create-grid {
     border: 2px dashed #FFD700;
-    max-width: 350px; /* 盤面の最大幅を狭くする */
+    max-width: 350px; 
     margin: 15px auto;
 }
 
 .create-cell {
     border: 1px solid #444;
-    /* heightの指定を削除し、gridアイテムの縦横比を保ち正方形に近づける */
-    aspect-ratio: 1 / 1; /* 横幅に対する縦幅の比率を1:1にする (モダンなCSSのテクニック) */
+    aspect-ratio: 1 / 1; 
     display: flex;
     justify-content: center;
     align-items: center;
@@ -338,17 +357,15 @@ h2 {
     height: 80%;
     text-align: center;
     background-color: #333;
-    color: #FFD700; /* 入力文字をゴールドに */
+    color: #FFD700; 
     font-size: 1.2em;
     font-weight: 900;
     border: none;
     outline: none;
     text-transform: uppercase;
 }
-/* ★★★ 修正箇所ここまで ★★★ */
 
-
-/* --- ランキング画面 --- */
+/* --- ランキング画面 (省略) --- */
 #ranking-tabs button {
     padding: 10px 18px;
     margin: 5px;
