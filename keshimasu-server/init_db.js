@@ -2,8 +2,7 @@
 const db = require('./db');
 // パスワード認証にbcryptを使用
 const bcrypt = require('bcryptjs'); // ★ここを修正★
-
-const WORDS = require('./data/word_lists'); // 問題テスト用辞書
+//const WORDS = require('./data/word_lists'); // 問題テスト用辞書
 
 async function initializeDatabase() {
     console.log('データベース初期化を開始...');
