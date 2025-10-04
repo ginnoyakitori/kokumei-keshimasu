@@ -4,7 +4,7 @@
 
 // ★APIのURLを定義 (Renderデプロイ時に、ここにWeb ServiceのURLを設定してください)
 // 例: const API_BASE_URL = 'https://keshimasu-server-xyz.onrender.com/api'; 
-const API_BASE_URL = 'http://localhost:3000/api'; 
+const API_BASE_URL = 'https://kokumei-keshimasu.onrender.com/api'; 
 
 // --- 1. 定数と初期データ ---
 
