@@ -29,8 +29,8 @@ body {
     border: 1px solid #444;
 }
 
-/* ★★★ 修正箇所 2: メインタイトルのスタイルと、表示・非表示の制御 ★★★ */
-#app-title {
+/* ★★★ 修正箇所 2-1: メインタイトル (h1) のスタイル ★★★ */
+#app-title { 
     color: #FFD700;
     font-family: 'Georgia', serif;
     font-size: 2.5em;
@@ -38,24 +38,9 @@ body {
     border-bottom: 2px solid #555;
     padding-bottom: 10px;
     text-shadow: 0 0 5px rgba(255, 215, 0, 0.7);
-    display: block; /* デフォルトで表示 */
+    /* JSで表示/非表示を切り替えるため、初期スタイルを定義 */
+    display: block; 
 }
-
-/* JavaScriptで#home-screenが表示されていないときに#app-titleを隠す */
-/* (今回はJavaScriptではなくCSSで制御します) */
-
-/* メインタイトルと画面表示の連動をJSで制御するため、CSSはシンプルに */
-h1 { /* #app-title のスタイルを流用 */
-    color: #FFD700;
-    font-family: 'Georgia', serif;
-    font-size: 2.5em;
-    margin-bottom: 25px;
-    border-bottom: 2px solid #555;
-    padding-bottom: 10px;
-    text-shadow: 0 0 5px rgba(255, 215, 0, 0.7);
-}
-/* ★★★ 修正箇所 2 ここまで ★★★ */
-
 
 h2 {
     color: #dcdcdc;
@@ -172,17 +157,17 @@ h2 {
     border: 1px solid #555;
 }
 
-/* ★★★ 修正箇所 3: 第N問目の表示を大きくする ★★★ */
+/* ★★★ 修正箇所 2-2: 第N問目の表示を大きくする ★★★ */
 #problem-number-display {
-    font-size: 1.2em; /* 標準のinfo-tagより大きく */
+    font-size: 1.2em; 
     font-weight: bold;
-    color: #FFD700; /* ゴールドで強調 */
-    background-color: #1c1c1c; /* 暗い背景色 */
+    color: #FFD700; 
+    background-color: #1c1c1c; 
     padding: 6px 10px;
-    border: 2px solid #FFD700; /* ゴールドの縁取り */
+    border: 2px solid #FFD700; 
     border-radius: 6px;
 }
-/* ★★★ 修正箇所 3 ここまで ★★★ */
+/* ★★★ 修正箇所 2-2 ここまで ★★★ */
 
 
 /* ゲーム盤面スタイル (省略) */

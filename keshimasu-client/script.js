@@ -1,21 +1,62 @@
 // ----------------------------------------------------
-// フロントエンド JavaScript コード - script.js (問題登録機能追加版)
+// フロントエンド JavaScript コード - script.js (問題登録・タイトル修正版)
 // ----------------------------------------------------
 
 // ★★★ 🚨 要修正 ★★★
-// あなたのRender Web ServiceのURLに必ず置き換えてください。
-// 例: const API_BASE_URL = 'https://your-keshimasu-server.onrender.com/api'; 
+// あなたのNode.jsサーバーの公開URLに置き換えてください。
 const API_BASE_URL = 'https://kokumei-keshimasu.onrender.com/api'; 
 
 // --- 1. 定数と初期データ ---
 
-// ★★★ 修正箇所 1: 初期問題をサーバーからの動的ロードに切り替え ★★★
-// ハードコードされた問題リストを削除し、動的リストを定義
+// サーバーから動的にロードされる問題リスト
 let allPuzzles = { country: [], capital: [] }; 
+// 辞書データ (テスト用) - カタカナを使用
+const COUNTRY_DICT = [
+  "アイスランド","アイルランド","アゼルバイジャン","アフガニスタン","アメリカ",
+  "アラブシュチョウコクレンポウ","アルジェリア","アルゼンチン","アルバニア","アルメニア",
+  "アンゴラ","アンティグアバーブーダ","アンドラ","イエメン","イギリス","イスラエル","イタリア","イラク","イラン","インド",
+  "インドネシア","ウガンダ","ウクライナ","ウズベキスタン","ウルグアイ","エクアドル","エジプト","エストニア","エスワティニ","エチオピア",
+  "エリトリア","エルサルバドル","オーストラリア","オーストリア","オマーン","オランダ","ガーナ","カーボベルデ","ガイアナ","カザフスタン",
+  "カタール","カナダ","ガボン","カメルーン","ガンビア","カンボジア","キタマケドニア","ギニア","ギニアビサウ","キプロス",
+  "キューバ","ギリシャ","キリバス","キルギス","グアテマラ","クウェート","クックショトウ","グレナダ","クロアチア","ケニア",
+  "コートジボワール","コスタリカ","コソボ","コモロ","コロンビア","コンゴキョウワコク","コンゴミンシュキョウワコク","サウジアラビア",
+  "サモア","サントメプリンシペ","ザンビア","サンマリノ","シエラレオネ","ジブチ","ジャマイカ","ジョージア","シリア","シンガポール",
+  "ジンバブエ","スイス","スウェーデン","スーダン","スペイン","スリナム","スリランカ","スロバキア","スロベニア","セーシェル",
+  "セキドウギニア","セネガル","セルビア","セントクリストファーネービス","セントビンセントグレナディーンショトウ","セントルシア",
+  "ソマリア","ソロモンショトウ","タイ","ダイカンミンコク","タジキスタン","タンザニア","チェコ","チャド","チュウオウアフリカ",
+  "チュウカジンミンキョウワコク","チュニジア","チョウセンミンシュシュギジンミンキョウワコク","チリ","ツバル","デンマーク","ドイツ",
+  "トーゴ","ドミニカキョウワコク","ドミニカコク","トリニダードトバゴ","トルクメニスタン","トルコ","トンガ","ナイジェリア","ナウル",
+  "ナミビア","ニウエ","ニカラグア","ニジェール","ニホン","ニュージーランド","ネパール","ノルウェー","バーレーン","ハイチ","パキスタン",
+  "バチカンシコク","パナマ","バヌアツ","バハマ","パプアニューギニア","パラオ","パラグアイ","バルバドス","ハンガリー","バングラデシュ",
+  "ヒガシティモール","フィジー","フィリピン","フィンランド","ブータン","ブラジル","フランス","ブルガリア","ブルキナファソ","ブルネイ",
+  "ブルンジ","ベトナム","ベナン","ベネズエラ","ベラルーシ","ベリーズ","ペルー","ベルギー","ポーランド","ボスニアヘルツェゴビナ",
+  "ボツワナ","ボリビア","ポルトガル","ホンジュラス","マーシャルショトウ","マダガスカル","マラウイ","マリ","マルタ","マレーシア",
+  "ミクロネシアレンポウ","ミナミアフリカキョウワコク","ミナミスーダン","ミャンマー","メキシコ","モーリシャス","モーリタニア",
+  "モザンビーク","モナコ","モルディブ","モルドバ","モロッコ","モンゴル","モンテネグロ","ヨルダン","ラオス","ラトビア","リトアニア",
+  "リビア","リヒテンシュタイン","リベリア","ルーマニア","ルクセンブルク","ルワンダ","レソト","レバノン","ロシア"
+];
 
-const COUNTRY_DICT = ['アメリカ', 'イギリス', 'ドイツ', 'フランス', 'ニホン', 'タイワン'];
-const CAPITAL_DICT = ['トウキョウ', 'パリ', 'ロンドン', 'ベルリン', 'ローマ']; 
-
+const CAPITAL_DICT = [
+  "アクラ","アシガバット","アスタナ","アスマラ","アスンシオン","アディスアベバ","アテネ","アバルア","アピア","アブジャ",
+  "アブダビ","アムステルダム","アルジェ","アロフィ","アンカラ","アンタナナリボ","アンドララベリャ","アンマン","イスラマバード",
+  "ウィーン","ウィントフック","ウェリントン","ウランバートル","エルサレム","エレバン","オスロ","オタワ","カイロ","カストリーズ",
+  "カトマンズ","カブール","カラカス","カンパラ","キーウ","キガリ","キシナウ","ギテガ","キト","キャンベラ","キングスタウン","キングストン",
+  "キンシャサ","グアテマラシティ","クアラルンプール","クウェート","コナクリ","コペンハーゲン","ザグレブ","サヌア","サラエボ",
+  "サンサルバドル","サンティアゴ","サントドミンゴ","サントメ","サンホセ","サンマリノ","ジブチ","ジャカルタ","ジュバ","ジョージタウン",
+  "シンガポール","スコピエ","ストックホルム","スバ","スリジャヤワルダナプラコッテ","セントジョージズ","セントジョンズ","ソウル",
+  "ソフィア","ダカール","タシケント","ダッカ","ダブリン","ダマスカス","タラワ","タリン","チュニス","ティラナ","ディリ","ティンプー",
+  "テグシガルパ","テヘラン","デリー","トウキョウ","ドゥシャンベ","ドーハ","ドドマ","トビリシ","トリポリ","ナイロビ","ナッソー","ニアメ",
+  "ニコシア","ヌアクショット","ヌクアロファ","ネピドー","バクー","バグダッド","バセテール","バチカン","パナマシティ","ハノイ","ハバナ",
+  "ハボローネ","バマコ","パラマリボ","ハラレ","パリ","パリキール","ハルツーム","バレッタ","バンギ","バンコク","バンジュール",
+  "バンダルスリブガワン","ビエンチャン","ビクトリア","ビサウ","ビシュケク","ピョンヤン","ビリニュス","ファドゥーツ","ブエノスアイレス",
+  "ブカレスト","ブダペスト","フナフティ","プノンペン","プライア","ブラザビル","ブラジリア","ブラチスラバ","プラハ","フリータウン",
+  "プリシュティナ","ブリッジタウン","ブリュッセル","プレトリア","ベイルート","ベオグラード","ペキン","ヘルシンキ","ベルモパン","ベルリン",
+  "ベルン","ポートオブスペイン","ポートビラ","ポートモレスビー","ポートルイス","ボゴタ","ポドゴリツァ","ホニアラ","ポルトープランス",
+  "ポルトノボ","マジュロ","マスカット","マセル","マドリード","マナーマ","マナグア","マニラ","マプト","マラボ","マルキョク","マレ",
+  "ミンスク","ムババーネ","メキシコシティ","モガディシュ","モスクワ","モナコ","モロニ","モンテビデオ","モンロビア","ヤウンデ","ヤムスクロ",
+  "ヤレン","ラパス","ラバト","リーブルビル","リガ","リスボン","リマ","リヤド","リュブリャナ","リロングウェ","ルアンダ","ルクセンブルク",
+  "ルサカ","レイキャビク","ローマ","ロゾー","ロメ","ロンドン","ワガドゥグー","ワシントンD.C.","ワルシャワ","ンジャメナ"
+];
 // ゲームの状態変数
 let boardData = []; 
 let initialPlayData = []; 
@@ -42,6 +83,7 @@ const screens = {
     create: document.getElementById('create-puzzle-screen'),
     ranking: document.getElementById('ranking-screen') 
 };
+const appTitleElement = document.getElementById('app-title'); // メインタイトル要素
 const boardElement = document.getElementById('board');
 const eraseButton = document.getElementById('erase-button');
 const createBoardElement = document.getElementById('create-board');
@@ -68,7 +110,7 @@ function isValidGameChar(char) {
 // --- LocalStorageによるクリア状態管理 ---
 
 /**
- * LocalStorageからクリアした問題のIDリストを取得する (インデックスからID管理に変更)
+ * LocalStorageからクリアした問題のIDリストを取得する
  */
 function getClearedPuzzles(mode) {
     const key = `cleared_puzzles_${mode}_id`;
@@ -91,7 +133,7 @@ function markPuzzleAsCleared(mode, puzzleId) {
 // --- サーバー連携・プレイヤー認証 ---
 
 /**
- * ★★★ 修正箇所 2: サーバーから問題リストを動的にロードする関数 ★★★
+ * サーバーから問題リストを動的にロードする関数
  */
 async function loadPuzzles() {
     try {
@@ -215,7 +257,7 @@ function showScreen(screenName) {
         screens[key].style.display = (key === screenName) ? 'block' : 'none';
     });
     
-    // ★★★ 修正箇所 5: ホーム画面でのみメインタイトルを表示 ★★★
+    // ホーム画面でのみメインタイトルを表示
     if (screenName === 'home') {
         appTitleElement.style.display = 'block';
         updateHomeProblemCount();
@@ -223,11 +265,11 @@ function showScreen(screenName) {
         appTitleElement.style.display = 'none';
     }
 }
+
 /**
  * ホーム画面に問題数を表示する
  */
 function updateHomeProblemCount() {
-    // ★★★ 修正箇所 3: allPuzzlesのデータを使用 ★★★
     const countryCount = allPuzzles.country.length;
     const capitalCount = allPuzzles.capital.length;
     
@@ -240,7 +282,6 @@ function updateHomeProblemCount() {
  */
 function startGame(isCountry, isCreation) {
     const mode = isCountry ? 'country' : 'capital';
-    // ★★★ 修正箇所 4: allPuzzlesのデータを使用 ★★★
     const problemList = allPuzzles[mode]; 
     
     // 制作モードではない場合のみ、問題選択ロジックを実行
@@ -362,7 +403,7 @@ async function updatePlayerScore(mode) {
 }
 
 /**
- * ★★★ 修正箇所 5: 問題制作モードでクリアした問題をサーバーに登録する関数 ★★★
+ * 問題制作モードでクリアした問題をサーバーに登録する関数
  */
 async function submitNewPuzzle(mode, boardData, creator) {
     try {
@@ -411,7 +452,7 @@ async function checkGameStatus() {
             const nextClearCount = playerStats[mode + '_clears'];
             alert(`🎉 全ての文字を消去しました！クリアです！\nあなたの${modeName}クリア数は${nextClearCount}問になりました。`);
         } else {
-            // ★★★ 修正箇所 6: 制作モードのクリア処理で問題登録を呼び出す ★★★
+            // 制作モードのクリア処理で問題登録を呼び出す
             const registrationConfirmed = confirm("🎉 作成した問題をクリアしました！\nこの問題を標準問題として登録しますか？");
             
             if (registrationConfirmed) {
@@ -426,7 +467,7 @@ async function checkGameStatus() {
 }
 
 
-// --- 3. ゲームロジックの中核 (省略: 修正なし) ---
+// --- 3. ゲームロジックの中核 ---
 
 function applyGravity() { 
     for (let c = 0; c < 5; c++) {
@@ -502,7 +543,7 @@ function handleCellClick(event) {
     renderBoard(5); 
 }
 
-/** 消去ボタンイベントリスナー (修正なし) */
+/** 消去ボタンイベントリスナー */
 eraseButton.addEventListener('click', async () => { 
     if (selectedCells.length < 2) return;
 
@@ -578,7 +619,6 @@ resetBtn.addEventListener('click', () => {
         document.getElementById('create-status').textContent = '入力完了！解答を開始できます。';
         
     } else if (currentPuzzleIndex !== -1) {
-        // ★★★ 修正箇所 7: problemListをallPuzzlesから取得 ★★★
         const problemList = isCountryMode ? allPuzzles.country : allPuzzles.capital;
         const selectedPuzzle = problemList[currentPuzzleIndex];
         
@@ -594,7 +634,7 @@ resetBtn.addEventListener('click', () => {
 });
 
 
-// --- 4. 問題制作モードのロジック (省略: 修正なし) ---
+// --- 4. 問題制作モードのロジック ---
 
 function renderCreateBoard() { 
     createBoardElement.innerHTML = '';
@@ -672,7 +712,7 @@ btnInputComplete.addEventListener('click', () => {
 });
 
 
-// --- 5. ランキングロジック (修正なし) ---
+// --- 5. ランキングロジック ---
 
 const rankingScreen = document.getElementById('ranking-screen');
 const rankingTabs = document.getElementById('ranking-tabs');
@@ -709,7 +749,7 @@ async function fetchAndDisplayRanking(type) {
 }
 
 
-// --- 6. イベントリスナーの設定 (修正なし) ---
+// --- 6. イベントリスナーの設定 ---
 
 document.getElementById('btn-country-mode').addEventListener('click', () => {
     startGame(true, false); 
