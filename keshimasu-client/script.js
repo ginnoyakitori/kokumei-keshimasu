@@ -1,5 +1,5 @@
 // ----------------------------------------------------
-// フロントエンド JavaScript コード - script.js (フルコード)
+// フロントエンド JavaScript コード - script.js (最終修正版)
 // ----------------------------------------------------
 
 // ★★★ 🚨 要修正 ★★★
@@ -32,7 +32,7 @@ const initialBoardData_Country_List = [
             ['ア', 'メ', 'リ', 'カ', 'ス'], ['イ', 'ギ', 'リ', 'ス', 'マ'],
             ['ド', 'イ', 'ツ', 'フ', 'ス'], ['オ', 'ー', 'ス', 'ト', 'ラ']
         ], 
-        creator: '銀の焼き鳥' 
+        creator: '標準問題スタッフ' 
     },
     // 問題 2: ダミー問題
     { 
@@ -42,7 +42,7 @@ const initialBoardData_Country_List = [
             ['ナ', 'ニ', 'ヌ', 'ネ', 'ノ'], ['ハ', 'ヒ', 'フ', 'ヘ', 'ホ'],
             ['マ', 'ミ', 'ム', 'メ', 'モ'], ['ヤ', 'ユ', 'ヨ', 'ワ', 'ン']
         ], 
-        creator: '銀の焼き鳥' 
+        creator: 'ダミー制作班' 
     }
 ];
 
@@ -70,7 +70,7 @@ const initialBoardData_Capital_List = [
             ['リ', 'ー', 'ド', 'カ', 'イ'], ['ロ', 'シ', 'ド', 'ニ', 'ー'],
             ['ア', 'テ', 'ネ', 'プ', 'ラ'], ['ハ', 'ノ', 'イ', 'ソ', 'ウ']
         ], 
-        creator: '銀の焼き鳥' 
+        creator: '標準問題スタッフ' 
     },
     // 問題 2: ダミー問題
     { 
@@ -80,7 +80,7 @@ const initialBoardData_Capital_List = [
             ['ナ', 'ニ', 'ヌ', 'ネ', 'ノ'], ['ハ', 'ヒ', 'フ', 'ヘ', 'ホ'],
             ['マ', 'ミ', 'ム', 'メ', 'モ'], ['ヤ', 'ユ', 'ヨ', 'ワ', 'ン']
         ], 
-        creator: '銀の焼き鳥' 
+        creator: 'ダミー制作班' 
     }
 ];
 
@@ -350,17 +350,18 @@ function startGame(isCountry, isCreation) {
     
     const modeName = isCountry ? '国名ケシマス' : '首都名ケシマス';
     
-    // 一番上のタイトルを変更
+    // ★★★ 修正箇所 1: 一番上のタイトルを変更 ★★★
     document.getElementById('current-game-title').textContent = modeName; 
     
-    // 残り問題数 = 全問題数 - クリアした問題数
-    const remainingProblemsCount = problemList.length - getClearedPuzzles(mode).length;
+    // ★★★ 修正箇所 2: 問題番号の表示を「クリア数 + 1」に戻す ★★★
+    const currentClearCount = playerStats[mode + '_clears'] || 0;
+    const nextProblemNumber = currentClearCount + 1;
     
-    // 問題に関する情報 (制作モードか、残り問題数か)
+    // 問題に関する情報 (制作モードか、次の問題番号か)
     document.getElementById('problem-number-display').textContent = 
         isCreation 
         ? '問題制作モード' 
-        : `残り ${remainingProblemsCount} 問`;
+        : `第 ${nextProblemNumber} 問`; // 例: 第 1 問
         
     // 制作者名を表示するロジック
     let creatorName = '銀の焼き鳥'; // 標準問題のデフォルト制作者名
@@ -372,14 +373,15 @@ function startGame(isCountry, isCreation) {
     document.getElementById('creator-display').textContent = `制作者: ${creatorName}`;
         
     updateStatusDisplay();
-    renderBoard(8); // ボードを8行表示に固定
+    // ★★★ 修正箇所 3: 盤面表示を5行に戻す ★★★
+    renderBoard(5); 
     showScreen('mainGame');
 }
 
 function renderBoard(visibleRows) { 
     boardElement.innerHTML = '';
-    // 常に0行目から開始し、ボードの全行を表示します
-    const startRow = 0; 
+    // ★★★ 修正箇所 3: 盤面表示を visibleRows (通常5行) に基づいて行う ★★★
+    const startRow = boardData.length - visibleRows; 
     
     for (let r = startRow; r < boardData.length; r++) {
         for (let c = 0; c < boardData[r].length; c++) {
@@ -534,7 +536,7 @@ function handleCellClick(event) {
     }
     
     eraseButton.disabled = selectedCells.length < 2;
-    renderBoard(8);
+    renderBoard(5); // 5行表示
 }
 
 /** 消去ボタンイベントリスナー (Fの文字置き換えロジック修正済み) */
@@ -601,7 +603,7 @@ eraseButton.addEventListener('click', async () => {
     selectedCells = [];
     eraseButton.disabled = true;
     
-    renderBoard(8);
+    renderBoard(5); // 5行表示
     updateStatusDisplay();
     await checkGameStatus();
 });
@@ -622,7 +624,7 @@ resetBtn.addEventListener('click', () => {
         usedWords = [];
         eraseButton.disabled = true;
         
-        renderBoard(8);
+        renderBoard(5); // 5行表示
         updateStatusDisplay();
     }
 });
