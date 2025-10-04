@@ -1,563 +1,400 @@
-/* ---------------------------------------------------- */
-/* CSSコード - style.css (最終版: ワードリスト1列表示修正済み) */
-/* ---------------------------------------------------- */
+/* keshimasu-client/style.css - 豪華版 */
+
+/* --- 1. グローバル設定とフォント --- */
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700&family=Noto+Sans+JP:wght@400;700&display=swap');
+
+:root {
+    /* カラーパレット */
+    --color-dark-bg: #1f1f2e;     /* メイン背景 (濃いネイビー/パープル) */
+    --color-med-bg: #282a36;      /* コンポーネント背景 (Dracula風) */
+    --color-light-text: #f8f8f2;  /* 基本テキスト */
+    --color-primary: #ffc700;     /* プライマリカラー (ゴールド/ネオンイエロー) */
+    --color-secondary: #ff79c6;   /* セカンダリカラー (ピンク) */
+    --color-accent: #6272a4;      /* アクセントカラー (青みがかったグレー) */
+    --color-danger: #ff5555;      /* 危険/エラーカラー (赤) */
+    --color-board-fill: #393a55;  /* ボードの文字色 */
+    --color-board-empty: #1a1a27; /* 空セルの色 */
+
+    /* シャドウ設定 */
+    --shadow-deep: 0 8px 15px rgba(0, 0, 0, 0.4);
+    --shadow-neon: 0 0 5px var(--color-primary), 0 0 10px var(--color-primary);
+}
 
 body {
-    font-family: 'Arial', sans-serif;
-    background-color: #1c1c1c; 
-    color: #f0f0f0; 
+    font-family: 'Noto Sans JP', sans-serif;
+    background-color: var(--color-dark-bg);
+    color: var(--color-light-text);
     margin: 0;
     padding: 0;
     display: flex;
     justify-content: center;
-    align-items: flex-start;
+    align-items: flex-start; /* 上部に寄せる */
     min-height: 100vh;
     padding-top: 30px;
-    padding-bottom: 30px;
+    box-sizing: border-box;
 }
 
 #app-container {
-    background-color: #2c2c2c; 
-    padding: 35px;
-    border-radius: 15px;
-    box-shadow: 
-        0 0 20px rgba(0, 0, 0, 0.5), 
-        0 0 0 4px #FFD700; 
     width: 100%;
-    max-width: 500px;
-    text-align: center;
-    border: 1px solid #444;
-}
-
-/* メインタイトル: JSで表示/非表示を制御 (ホーム画面以外で非表示) */
-#app-title { 
-    color: #FFD700;
-    font-family: 'Georgia', serif;
-    font-size: 2.5em;
-    margin-bottom: 25px;
-    border-bottom: 2px solid #555;
-    padding-bottom: 10px;
-    text-shadow: 0 0 5px rgba(255, 215, 0, 0.7);
-    display: block; 
+    max-width: 600px;
+    padding: 20px;
 }
 
 h2 {
-    color: #dcdcdc;
-    font-size: 1.3em;
-    margin-bottom: 10px;
-}
-
-.screen {
-    margin-top: 20px;
-}
-
-/* --- ホーム画面 --- */
-.mode-selection {
-    display: flex;
-    flex-direction: column; 
-    gap: 15px; 
-    justify-content: center;
-    align-items: center; 
-    margin-top: 20px;
-}
-
-.mode-card {
-    background-color: #383838; 
-    border: 1px solid #555;
-    border-radius: 10px;
-    padding: 20px;
-    width: 90%; 
-    max-width: 350px; 
+    font-family: 'Montserrat', sans-serif;
+    color: var(--color-secondary);
     text-align: center;
-    box-shadow: 0 8px 15px rgba(0, 0, 0, 0.6);
-    transition: transform 0.2s, box-shadow 0.2s;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+    margin-bottom: 25px;
+    letter-spacing: 2px;
+    text-shadow: 0 0 5px rgba(255, 121, 198, 0.5);
 }
 
-.mode-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.8), 0 0 8px #FFD700;
+h3 {
+    color: var(--color-primary);
+    text-shadow: 0 0 3px rgba(255, 199, 0, 0.5);
+    border-bottom: 2px solid var(--color-accent);
+    padding-bottom: 5px;
+    margin-bottom: 15px;
 }
 
-.mode-card h2 {
-    color: #f0f0f0;
-    font-weight: bold;
-    margin-bottom: 10px;
+/* --- 2. タイトル --- */
+#app-title {
+    font-family: 'Montserrat', sans-serif;
+    font-size: 2.5em;
+    font-weight: 700;
+    text-align: center;
+    color: var(--color-primary);
+    text-shadow: var(--shadow-neon);
+    margin-bottom: 30px;
+    padding: 10px 0;
+    letter-spacing: 5px;
+    display: block; /* 常にスペースを確保 */
 }
 
-.mode-card button {
-    width: 100%;
-    padding: 12px;
-    background: linear-gradient(145deg, #FFD700, #c0a800);
-    color: #1c1c1c; 
+/* --- 3. ボタンとフォーム要素のスタイル --- */
+button {
+    background-color: var(--color-accent);
+    color: var(--color-light-text);
     border: none;
-    border-radius: 6px;
+    padding: 12px 20px;
+    margin: 5px;
+    border-radius: 8px;
     cursor: pointer;
-    font-size: 1em;
-    font-weight: bold;
-    margin-bottom: 8px; 
-    box-shadow: 0 4px #a08800;
-    transition: all 0.1s;
+    font-weight: 700;
+    transition: background-color 0.2s, transform 0.1s, box-shadow 0.2s;
+    box-shadow: var(--shadow-deep);
+    text-transform: uppercase;
 }
 
-.mode-card button:hover {
-    background: linear-gradient(145deg, #FFEF95, #FFD700);
-    transform: translateY(-1px);
-    box-shadow: 0 5px #a08800;
+button:hover:not(:disabled) {
+    background-color: #788aae;
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
 }
 
-.mode-card button:active {
-    transform: translateY(3px);
-    box-shadow: 0 1px #a08800;
+button:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: var(--shadow-deep);
 }
 
-.mode-card button:disabled {
-    background: #555;
-    color: #aaa;
-    box-shadow: 0 3px #444;
+button:disabled {
+    background-color: #4a4d62;
     cursor: not-allowed;
+    opacity: 0.6;
 }
 
-.problem-count-display {
-    font-size: 0.9em;
-    color: #FFD700; 
-    font-weight: bold;
-    display: block; 
-    margin-top: 5px;
+.primary {
+    background-color: var(--color-primary);
+    color: var(--color-dark-bg);
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
 }
 
-/* --- メインゲーム画面 ヘッダー (縦配置・拡大) --- */
+.primary:hover:not(:disabled) {
+    background-color: #ffda66;
+}
 
-.game-header {
-    /* 要素を縦に並べ、中央に配置 */
-    display: flex; 
-    flex-direction: column; 
-    align-items: center; 
-    border-bottom: 2px solid #FFD700; /* 目立つ線 */
-    padding-bottom: 15px;
+.secondary {
+    background-color: var(--color-secondary);
+    color: var(--color-dark-bg);
+}
+
+.secondary:hover:not(:disabled) {
+    background-color: #ff9ee6;
+}
+
+input[type="text"],
+input[type="password"] {
+    width: calc(100% - 20px);
+    padding: 12px 10px;
+    margin-bottom: 15px;
+    border: 2px solid var(--color-accent);
+    border-radius: 6px;
+    background-color: var(--color-med-bg);
+    color: var(--color-light-text);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6);
+    transition: border-color 0.2s;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus {
+    border-color: var(--color-primary);
+    outline: none;
+}
+
+/* --- 4. 認証画面 (Auth Screen) --- */
+.auth-box {
+    background-color: var(--color-med-bg);
+    padding: 30px;
+    border-radius: 12px;
+    box-shadow: var(--shadow-deep);
+    border-left: 5px solid var(--color-primary);
+}
+
+.auth-box label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 700;
+    color: var(--color-secondary);
+}
+
+.auth-buttons {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
     margin-bottom: 20px;
 }
 
-/* 1. ゲームモードのタイトル (国名ケシマス/首都名ケシマス) */
-#current-game-title {
-    color: #FFD700;
-    font-size: 1.8em; /* 拡大 */
-    font-weight: 900;
-    margin: 5px 0 10px 0; 
+.auth-buttons button {
+    flex-grow: 1;
+    margin: 0 5px;
 }
 
-/* 問題番号と制作者を囲むコンテナ */
-.game-info {
-    /* 縦配置 */
+.guest-button {
+    width: 100%;
+    background-color: #393a55;
+    color: var(--color-light-text);
+    margin-top: 15px;
+}
+
+/* --- 5. ホーム画面 (Home Screen) --- */
+.welcome-message {
+    text-align: center;
+    font-size: 1.1em;
+    margin-bottom: 30px;
+    color: var(--color-primary);
+}
+
+.mode-selection button {
+    width: calc(50% - 10px);
+    padding: 15px 10px;
+    display: inline-block;
+    vertical-align: top;
+    font-size: 1.1em;
+}
+
+.problem-count {
+    display: block;
+    font-size: 0.9em;
+    font-weight: 400;
+    margin-top: 5px;
+    color: var(--color-light-text);
+}
+
+.utility-buttons {
+    margin-top: 20px;
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px; 
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+/* --- 6. ゲームボード (Main Game) --- */
+#game-info {
+    text-align: center;
+    margin-bottom: 20px;
+    background-color: var(--color-med-bg);
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: var(--shadow-deep);
+    border-bottom: 3px solid var(--color-secondary);
+}
+
+#problem-number-display {
+    font-size: 1.5em;
+    font-family: 'Montserrat', sans-serif;
+    color: var(--color-primary);
+    text-shadow: var(--shadow-neon);
     margin-top: 5px;
 }
 
-.info-tag {
-    /* ベーススタイルをリセット/調整 */
-    background-color: transparent;
-    border: none;
-    padding: 0;
-    font-size: 1.1em;
-    color: #ccc;
-    font-weight: normal;
-}
-
-/* 2. 第N問目の表示 */
-#problem-number-display {
-    font-size: 1.6em; /* 大幅に拡大 */
-    font-weight: bold;
-    color: #fff; 
-    background-color: #383838; 
-    padding: 8px 15px;
-    border: 3px solid #FFD700; /* ゴールドの縁取り */
-    border-radius: 8px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-    min-width: 150px; 
-}
-
-/* 3. 制作者の表示 */
-#creator-display {
-    font-size: 1.1em; /* 拡大 */
-    color: #aaa; 
-    font-weight: normal;
-    background-color: #333;
-    padding: 6px 12px;
-    border-radius: 5px;
-}
-
-
-/* --- ゲーム盤面スタイル (最大化) --- */
-.board-grid {
+#board, #create-board {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    width: 100%;
-    max-width: 430px; /* コンテナのパディング(35px*2)を考慮して最大幅を設定 */
+    gap: 2px;
+    background-color: var(--color-dark-bg);
+    border: 5px solid var(--color-accent);
+    border-radius: 10px;
+    padding: 5px;
+    box-shadow: var(--shadow-deep);
     margin: 20px auto;
-    border: 4px solid #FFD700; /* 枠線を太く */
-    box-shadow: 0 0 15px rgba(255, 215, 0, 0.7); 
 }
 
+/* ゲーム盤のセル */
 .cell {
-    border: 1px solid #555; /* 枠線を少し濃く */
+    width: 100%;
+    aspect-ratio: 1 / 1; /* 正方形 */
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 1.8em; /* 文字サイズを拡大 */
-    font-weight: 900;
-    height: 70px; /* マス目の高さを拡大 */
-    background-color: #333; 
-    color: #f0f0f0;
+    background-color: var(--color-board-fill);
+    color: var(--color-light-text);
+    font-size: 1.5em;
+    font-weight: 700;
     cursor: pointer;
-    user-select: none;
-    transition: background-color 0.1s, color 0.1s;
+    border-radius: 4px;
+    transition: background-color 0.1s, transform 0.1s;
+    box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.3);
 }
 
 .cell:hover:not(.empty) {
-    background-color: #444;
+    background-color: #4a4d62;
 }
 
 .cell.empty {
-    background-color: #2c2c2c; 
+    background-color: var(--color-board-empty);
     cursor: default;
 }
 
 .cell.selected {
-    background-color: #FFD700; 
-    color: #1c1c1c; 
+    background-color: var(--color-primary);
+    color: var(--color-dark-bg);
+    transform: scale(1.05);
+    box-shadow: 0 0 8px var(--color-primary), inset 0 0 5px rgba(0, 0, 0, 0.4);
 }
 
-/* --- コントロールパネル --- */
-.control-panel, .status-panel {
-    border-top: 1px solid #444;
-    padding-top: 15px;
-    margin-top: 15px;
-}
-
-.control-panel {
-    display: flex;
-    gap: 10px;
-    justify-content: center;
-}
-
-.control-panel button, .status-panel button {
-    padding: 12px 18px;
-    border-radius: 6px;
-    font-size: 1em;
-    cursor: pointer;
-    font-weight: bold;
-    transition: background-color 0.2s, box-shadow 0.1s;
-}
-
-#erase-button {
-    background: linear-gradient(145deg, #e30000, #a00000);
-    color: white;
-    border: none;
-    box-shadow: 0 4px #700000;
-}
-#erase-button:hover:not(:disabled) {
-    background: linear-gradient(145deg, #ff4d4d, #e30000);
-    transform: translateY(-1px);
-    box-shadow: 0 5px #700000;
-}
-#erase-button:active:not(:disabled) {
-    transform: translateY(3px);
-    box-shadow: 0 1px #700000;
-}
-#erase-button:disabled {
-    background: #555;
-    color: #aaa;
-    box-shadow: 0 3px #444;
-    cursor: not-allowed;
-}
-
-.secondary-btn {
-    background: linear-gradient(145deg, #5c5c5c, #404040);
-    color: #ccc;
-    border: none;
-    box-shadow: 0 4px #333;
-}
-.secondary-btn:hover {
-    background: linear-gradient(145deg, #707070, #5c5c5c);
-    transform: translateY(-1px);
-    box-shadow: 0 5px #333;
-}
-.secondary-btn:active {
-    transform: translateY(3px);
-    box-shadow: 0 1px #333;
-}
-
-.status-panel p {
-    color: #aaa;
-    margin: 5px 0;
+/* 状態表示 */
+#status-area {
+    background-color: var(--color-med-bg);
+    padding: 15px;
+    border-radius: 8px;
+    margin-top: 10px;
+    box-shadow: var(--shadow-deep);
 }
 
 #used-words-display {
-    color: #FFD700; 
-    font-weight: bold;
+    font-size: 1.1em;
+    color: var(--color-secondary);
+    font-weight: 700;
 }
 
-/* --- 制作画面 --- */
-.create-controls {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    align-items: center;
-    margin-bottom: 20px;
-}
-
-.create-controls label, .create-controls select {
-    color: #f0f0f0;
-}
-
-.create-controls select {
-    padding: 8px;
-    border-radius: 5px;
-    border: 1px solid #555;
-    background-color: #383838;
-    color: #f0f0f0;
-}
-
-#btn-input-complete {
-    background: linear-gradient(145deg, #5cb85c, #3f8342);
-    color: white;
-    box-shadow: 0 4px #2a612d;
-}
-#btn-input-complete:hover:not(:disabled) {
-    background: linear-gradient(145deg, #6cbe6c, #5cb85c);
-    transform: translateY(-1px);
-    box-shadow: 0 5px #2a612d;
-}
-#btn-input-complete:active:not(:disabled) {
-    transform: translateY(3px);
-    box-shadow: 0 1px #2a612d;
-}
-
-#create-status {
-    font-weight: bold;
-    color: #FFD700;
-    margin-bottom: 15px;
-}
-
-.create-grid {
-    border: 2px dashed #FFD700;
-    max-width: 350px; 
-    margin: 15px auto;
-}
-
-.create-cell {
-    border: 1px solid #444;
-    aspect-ratio: 1 / 1; 
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 2px;
+/* --- 7. 問題作成画面 (Create Screen) --- */
+#create-puzzle-screen .auth-box {
+    border-left: 5px solid var(--color-secondary);
 }
 
 .create-input {
     width: 80%;
     height: 80%;
     text-align: center;
-    background-color: #333;
-    color: #FFD700; 
-    font-size: 1.2em;
-    font-weight: 900;
-    border: none;
-    outline: none;
+    background: var(--color-board-fill);
+    color: var(--color-light-text);
+    border: 1px solid var(--color-accent);
+    font-size: 1.3em;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 0;
+    margin: 0;
+    border-radius: 3px;
+}
+
+.create-cell {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 3px;
+    background-color: var(--color-board-empty);
+    border-radius: 4px;
+}
+
+/* --- 8. ランキング画面 (Ranking Screen) --- */
+.ranking-tabs button {
+    background-color: var(--color-accent);
+    margin-right: 5px;
+    padding: 8px 15px;
+    text-transform: none;
+}
+
+.ranking-tabs button[data-type="total"] {
+    background-color: var(--color-primary);
+    color: var(--color-dark-bg);
+}
+
+.ranking-tabs button.active {
+    background-color: var(--color-secondary);
+    color: var(--color-dark-bg);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-neon);
+}
+
+.ranking-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+    background-color: var(--color-med-bg);
+    box-shadow: var(--shadow-deep);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.ranking-table th, .ranking-table td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #393a55;
+}
+
+.ranking-table th {
+    background-color: #393a55;
+    color: var(--color-primary);
+    font-weight: 700;
     text-transform: uppercase;
 }
 
-/* --- ランキング画面 --- */
-#ranking-tabs button {
-    padding: 10px 18px;
-    margin: 5px;
-    background-color: #383838;
-    color: #ccc;
-    border: 1px solid #555;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: background-color 0.1s, color 0.1s;
+.ranking-table tr:nth-child(even) {
+    background-color: #2b2d3c;
 }
 
-#ranking-tabs button:hover {
-    background-color: #555;
-    color: #f0f0f0;
+/* 1位強調 */
+.ranking-table tr:first-child td {
+    background-color: #4a4d62;
+    color: #ffd700; /* Gold */
+    font-weight: 900;
+    text-shadow: 0 0 5px rgba(255, 215, 0, 0.5);
 }
 
-#ranking-list-container table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 15px;
+/* --- 9. ワードリスト画面 --- */
+.word-list-tabs button.active {
+    background-color: var(--color-primary);
+    color: var(--color-dark-bg);
+    transform: translateY(-2px);
 }
 
-#ranking-list-container th, #ranking-list-container td {
-    border: 1px solid #444;
+#word-list-content {
+    margin-top: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
     padding: 10px;
-    text-align: left;
-}
-
-#ranking-list-container th {
-    background-color: #333;
-    color: #FFD700;
-}
-
-#ranking-list-container tr:nth-child(even) {
-    background-color: #383838;
-}
-
-#ranking-nickname-display {
-    margin-top: 15px;
-    font-size: 1.1em;
-    color: #aaa;
-}
-
-/* --- ワードリスト画面 --- */
-.word-list-note {
-    font-size: 0.9em;
-    color: #aaa;
-    margin-bottom: 15px;
-}
-
-#word-list-tabs button {
-    padding: 8px 15px;
-    margin: 5px;
-    background-color: #383838;
-    color: #ccc;
-    border: 1px solid #555;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: background-color 0.1s, color 0.1s;
-}
-
-#word-list-tabs button.active {
-    background-color: #FFD700;
-    color: #1c1c1c;
-    border-color: #FFD700;
-    font-weight: bold;
-}
-
-.word-list-grid {
-    display: grid;
-    /* ★★★ 修正箇所: 1列表示に変更 ★★★ */
-    grid-template-columns: 1fr; 
-    gap: 8px; /* 縦の隙間を調整 */
-    padding: 15px;
-    background-color: #333;
+    background-color: var(--color-med-bg);
     border-radius: 8px;
-    max-height: 400px; /* 縦スクロール可能にする */
-    overflow-y: auto;
-    border: 1px solid #555;
+    box-shadow: var(--shadow-deep);
 }
 
 .word-item {
-    background-color: #444;
-    color: #f0f0f0;
-    padding: 10px 10px; /* 縦横のパディングを増やして大きく見せる */
+    background-color: #393a55;
+    color: var(--color-light-text);
+    padding: 6px 10px;
     border-radius: 4px;
-    font-size: 1.0em; /* フォントサイズをわずかに大きく */
-    font-weight: bold;
-    text-align: left; /* 左寄せに変更 */
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    border-left: 5px solid #FFD700; /* 境界線を太く */
-}
-
-/* --- ホーム画面 ルール説明 --- */
-.game-rules {
-    background-color: #383838;
-    border: 1px solid #555;
-    border-radius: 8px;
-    padding: 15px;
-    margin-bottom: 25px;
-    text-align: left;
-}
-
-.game-rules h3 {
-    color: #FFD700;
-    font-size: 1.4em;
-    margin-top: 0;
-    border-bottom: 2px dashed #444;
-    padding-bottom: 5px;
-    margin-bottom: 10px;
-}
-
-.game-rules p {
     font-size: 0.9em;
-    color: #ccc;
-    margin-top: 0;
-    margin-bottom: 10px;
-}
-
-.rule-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-}
-
-.rule-list li {
-    font-size: 0.9em;
-    color: #f0f0f0;
-    line-height: 1.6;
-    margin-left: 10px;
-    position: relative;
-}
-
-.rule-list li::before {
-    content: '▶';
-    color: #FFD700;
-    font-size: 0.8em;
-    margin-right: 5px;
-}
-
-/* --- 認証画面 (Auth Screen) スタイル --- */
-.auth-form {
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-    align-items: center;
-    margin-top: 25px;
-}
-
-.auth-form input {
-    width: 80%;
-    max-width: 300px;
-    padding: 12px;
-    border-radius: 6px;
-    border: 1px solid #444;
-    background-color: #333;
-    color: #f0f0f0;
-    font-size: 1em;
-    text-align: center;
-}
-
-#btn-auth-submit {
-    width: 80%;
-    max-width: 300px;
-    padding: 12px;
-    background: linear-gradient(145deg, #FFD700, #c0a800);
-    color: #1c1c1c; 
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 1em;
-    font-weight: bold;
-    box-shadow: 0 4px #a08800;
-    transition: all 0.1s;
-}
-
-#btn-auth-submit:hover {
-    background: linear-gradient(145deg, #FFEF95, #FFD700);
-    transform: translateY(-1px);
-    box-shadow: 0 5px #a08800;
-}
-
-#btn-auth-submit:active {
-    transform: translateY(3px);
-    box-shadow: 0 1px #a08800;
+    box-shadow: 1px 1px 3px rgba(0, 0, 0, 0.3);
 }
