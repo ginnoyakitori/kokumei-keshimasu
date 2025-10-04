@@ -4,7 +4,7 @@
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg'); 
-const bcrypt = require('bcrypt'); // パスコードのハッシュ化用ライブラリ
+const bcrypt = require('bcryptjs');  // パスコードのハッシュ化用ライブラリ
 const app = express();
 
 const PORT = process.env.PORT || 3000; 
