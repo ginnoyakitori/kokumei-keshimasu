@@ -1,14 +1,14 @@
 // ----------------------------------------------------
-// Node.js (Express) サーバーコード - server.js (認証・データベース永続化版)
+// Node.js (Express) サーバーコード - server.js (フルコード)
 // ----------------------------------------------------
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg'); 
-const bcrypt = require('bcryptjs');  // パスコードのハッシュ化用ライブラリ
+const bcrypt = require('bcryptjs'); // bcryptjsを使用
 const app = express();
 
 const PORT = process.env.PORT || 3000; 
-const SALT_ROUNDS = 10; // bcryptの計算コスト
+const SALT_ROUNDS = 10; 
 
 // RenderのPostgreSQLデータベース接続設定
 const pool = new Pool({
@@ -27,17 +27,16 @@ async function initializeDatabase() {
         const client = await pool.connect();
         
         // プレイヤーテーブルが存在しない場合、作成する
-        // passcode_hash カラムを追加/修正
         const createTableQuery = `
             CREATE TABLE IF NOT EXISTS players (
                 id SERIAL PRIMARY KEY,
                 nickname VARCHAR(10) UNIQUE NOT NULL,
-                passcode_hash VARCHAR(255),  -- ★パスコードのハッシュを保存するカラム★
+                passcode_hash VARCHAR(255),
                 country_clears INTEGER DEFAULT 0,
                 capital_clears INTEGER DEFAULT 0,
                 last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
-            -- 既存のテーブルにカラムがない場合にのみ追加 (Renderで初回デプロイなら不要だが、安全のため)
+            -- 既存のテーブルにカラムがない場合にのみ追加 (安全のため)
             DO $$ BEGIN
                 ALTER TABLE players ADD COLUMN passcode_hash VARCHAR(255);
             EXCEPTION
@@ -78,6 +77,7 @@ app.post('/api/player/register', async (req, res) => {
                 return res.status(401).json({ message: "既存のユーザーですが、パスコードが設定されていません。別のニックネームを使ってください。" });
             }
             
+            // bcryptjsでパスコードを比較
             const match = await bcrypt.compare(passcode, player.passcode_hash);
             
             if (match) {
@@ -97,6 +97,7 @@ app.post('/api/player/register', async (req, res) => {
             
         } else {
             // --- 新規登録処理 ---
+            // bcryptjsでパスコードをハッシュ化
             const passcodeHash = await bcrypt.hash(passcode, SALT_ROUNDS);
             
             const insertQuery = `
@@ -120,7 +121,6 @@ app.post('/api/player/register', async (req, res) => {
         }
     } catch (error) {
         console.error("プレイヤー認証/登録エラー:", error);
-        // 重複エラーなど、一般的なエラーに対応
         if (error.code === '23505') { 
              return res.status(409).json({ message: "そのニックネームは既に使用されています。ログインしてください。" });
         }
@@ -130,10 +130,9 @@ app.post('/api/player/register', async (req, res) => {
 
 
 // ----------------------------------------------------
-// 2. スコア更新API: POST /api/score/update (変更なし)
+// 2. スコア更新API: POST /api/score/update
 // ----------------------------------------------------
 app.post('/api/score/update', async (req, res) => {
-    // ... スコア更新ロジック (変更なし) ...
     const { playerId, mode } = req.body;
     
     if (!playerId || !['country', 'capital'].includes(mode)) {
@@ -167,10 +166,9 @@ app.post('/api/score/update', async (req, res) => {
 
 
 // ----------------------------------------------------
-// 3. ランキング取得API: GET /api/rankings/:type (変更なし)
+// 3. ランキング取得API: GET /api/rankings/:type
 // ----------------------------------------------------
 app.get('/api/rankings/:type', async (req, res) => {
-    // ... ランキング取得ロジック (変更なし) ...
     const type = req.params.type;
     let orderByClause = '';
 
