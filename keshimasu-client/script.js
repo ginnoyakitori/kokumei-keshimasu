@@ -1,51 +1,17 @@
 // ----------------------------------------------------
-// フロントエンド JavaScript コード - script.js (最終修正版)
+// フロントエンド JavaScript コード - script.js (問題登録機能追加版)
 // ----------------------------------------------------
 
 // ★★★ 🚨 要修正 ★★★
 // あなたのRender Web ServiceのURLに必ず置き換えてください。
+// 例: const API_BASE_URL = 'https://your-keshimasu-server.onrender.com/api'; 
 const API_BASE_URL = 'https://kokumei-keshimasu.onrender.com/api'; 
 
 // --- 1. 定数と初期データ ---
 
-// ★★★ 修正箇所 1: ダミー問題を削除し、1問のみにする ★★★
-// 国名ケシマス用初期盤面リスト
-const initialBoardData_Country_List = [
-    // 問題 0 (最も古い問題として優先出題)
-    { 
-        data: [
-            ['マ', 'ベ', 'ナ', 'ン', 'マ'], 
-            ['ル', 'サ', 'モ', 'ア', 'リ'], 
-            ['タ', 'イ', 'エ', 'メ', 'ン'], 
-            ['ニ', 'ホ', 'ン', 'F', 'グ'],
-            ['ア', 'メ', 'リ', 'カ', 'F'],
-            ['イ', 'ギ', 'リ', 'ス', 'F'],
-            ['ド', 'イ', 'ツ', 'リ', 'マ'],
-            ['ラ', 'ト', 'ビ', 'ア', 'ラ']
-        ], 
-        creator: '銀の焼き鳥' 
-    },
-];
-
-// 首都名ケシマス用初期盤面リスト
-const initialBoardData_Capital_List = [
-    // 問題 0 (最も古い問題として優先出題)
-    { 
-        data: [
-            ['パ', 'ラ', 'ソ', 'ウ', 'ル'], 
-            ['ザ', 'タ', 'マ', 'リ', 'ボ'], 
-            ['F', 'リ', 'ぺ', 'キ', 'ン'], 
-            ['レ', 'ン', 'リ', 'ガ', 'ベ'],
-            ['F', 'ボ', 'F', 'タ', 'F'],
-            ['ダ', 'ブ', 'リ', 'ン', 'ル'],
-            ['パ', 'リ', 'ジ', 'ャ', 'ー'],
-            ['ア', 'ブ', 'リ', 'マ', 'ト']
-        ], 
-        creator: '銀の焼き鳥' 
-    },
-];
-// ★★★ 修正箇所 1: ここまで ★★★
-
+// ★★★ 修正箇所 1: 初期問題をサーバーからの動的ロードに切り替え ★★★
+// ハードコードされた問題リストを削除し、動的リストを定義
+let allPuzzles = { country: [], capital: [] }; 
 
 const COUNTRY_DICT = ['アメリカ', 'イギリス', 'ドイツ', 'フランス', 'ニホン', 'タイワン'];
 const CAPITAL_DICT = ['トウキョウ', 'パリ', 'ロンドン', 'ベルリン', 'ローマ']; 
@@ -102,27 +68,48 @@ function isValidGameChar(char) {
 // --- LocalStorageによるクリア状態管理 ---
 
 /**
- * LocalStorageからクリアした問題のインデックスリストを取得する
+ * LocalStorageからクリアした問題のIDリストを取得する (インデックスからID管理に変更)
  */
 function getClearedPuzzles(mode) {
-    const key = `cleared_puzzles_${mode}`;
+    const key = `cleared_puzzles_${mode}_id`;
     const cleared = localStorage.getItem(key);
     return cleared ? JSON.parse(cleared) : [];
 }
 
 /**
- * LocalStorageにクリアした問題のインデックスを記録する
+ * LocalStorageにクリアした問題のIDを記録する
  */
-function markPuzzleAsCleared(mode, index) {
-    const key = `cleared_puzzles_${mode}`;
+function markPuzzleAsCleared(mode, puzzleId) {
+    const key = `cleared_puzzles_${mode}_id`;
     let cleared = getClearedPuzzles(mode);
-    if (!cleared.includes(index)) {
-        cleared.push(index);
+    if (!cleared.includes(puzzleId)) {
+        cleared.push(puzzleId);
         localStorage.setItem(key, JSON.stringify(cleared));
     }
 }
 
 // --- サーバー連携・プレイヤー認証 ---
+
+/**
+ * ★★★ 修正箇所 2: サーバーから問題リストを動的にロードする関数 ★★★
+ */
+async function loadPuzzles() {
+    try {
+        const countryRes = await fetch(`${API_BASE_URL}/puzzles/country`);
+        const capitalRes = await fetch(`${API_BASE_URL}/puzzles/capital`);
+        
+        if (!countryRes.ok || !capitalRes.ok) throw new Error("問題リストの取得に失敗");
+        
+        allPuzzles.country = await countryRes.json();
+        allPuzzles.capital = await capitalRes.json();
+        
+        updateHomeProblemCount();
+        
+    } catch (error) {
+        console.error("問題のロードに失敗しました。サーバーが起動しているか確認してください。", error);
+        alert("サーバーから問題データをロードできませんでした。");
+    }
+}
 
 async function setupPlayer() {
     currentPlayerId = localStorage.getItem('player_id');
@@ -131,7 +118,6 @@ async function setupPlayer() {
     const defaultNickname = '銀の焼き鳥';
     const defaultPasscode = '0425';
 
-    // 「銀の焼き鳥」の自動初回登録/ログイン
     if (currentPlayerNickname === defaultNickname && currentPlayerId) {
         await registerPlayer(defaultNickname, defaultPasscode);
     } else if (currentPlayerNickname === "ゲスト" && !localStorage.getItem('default_user_checked')) {
@@ -139,14 +125,12 @@ async function setupPlayer() {
         await registerPlayer(defaultNickname, defaultPasscode);
     }
     
-    // 現在のユーザーがゲストの場合は、手動でログイン/登録を促す
     if (currentPlayerNickname === "ゲスト" || !currentPlayerId) {
-        alert("ニックネームとパスコードを設定して、ランキングに挑戦しましょう！");
         await promptForNickname(true);
     }
     
-    // ★★★ 修正箇所 3: 初期化時に問題数を表示 ★★★
-    updateHomeProblemCount();
+    // 問題をサーバーからロード
+    await loadPuzzles(); 
 }
 
 async function promptForNickname(isInitialRegistration) {
@@ -235,48 +219,47 @@ function showScreen(screenName) {
 /**
  * ホーム画面に問題数を表示する
  */
-// ★★★ 修正箇所 2: ホーム画面の問題数表示関数を追加 ★★★
 function updateHomeProblemCount() {
-    const countryCount = initialBoardData_Country_List.length;
-    const capitalCount = initialBoardData_Capital_List.length;
+    // ★★★ 修正箇所 3: allPuzzlesのデータを使用 ★★★
+    const countryCount = allPuzzles.country.length;
+    const capitalCount = allPuzzles.capital.length;
     
     document.getElementById('country-problem-count').textContent = `問題数: ${countryCount}問`;
     document.getElementById('capital-problem-count').textContent = `問題数: ${capitalCount}問`;
 }
-// ★★★ 修正箇所 2: ここまで ★★★
 
 /**
  * ゲームの開始。未クリアの問題の中からインデックスが最も小さいものを選択する。
  */
 function startGame(isCountry, isCreation) {
     const mode = isCountry ? 'country' : 'capital';
-    const problemList = isCountry ? initialBoardData_Country_List : initialBoardData_Capital_List;
+    // ★★★ 修正箇所 4: allPuzzlesのデータを使用 ★★★
+    const problemList = allPuzzles[mode]; 
     
     // 制作モードではない場合のみ、問題選択ロジックを実行
     if (!isCreation) {
-        const clearedIndices = getClearedPuzzles(mode);
-        const availableIndices = problemList
-            .map((_, index) => index)
-            .filter(index => !clearedIndices.includes(index));
+        const clearedIds = getClearedPuzzles(mode);
+        // 未クリアの問題をIDでフィルタリング
+        const availablePuzzles = problemList
+            .filter(puzzle => !clearedIds.includes(puzzle.id));
 
-        if (availableIndices.length === 0) {
+        if (availablePuzzles.length === 0) {
             alert(`🎉 ${isCountry ? '国名' : '首都名'}ケシマスのすべての問題をクリアしました！`);
             showScreen('home');
             return;
         }
 
-        // 未クリアの問題の中から、インデックスが最も小さいもの（最も古い問題）を選択
-        const selectedIndex = Math.min(...availableIndices);
+        // サーバーから取得した問題はtimestamp順にソートされているため、先頭が最も古い未クリア問題
+        const selectedPuzzle = availablePuzzles[0];
         
-        currentPuzzleIndex = selectedIndex;
+        // 問題リスト内でのインデックスを再計算
+        currentPuzzleIndex = problemList.findIndex(p => p.id === selectedPuzzle.id);
         
         // 選択された問題データを取得
-        const selectedPuzzle = problemList[selectedIndex];
         initialPlayData = JSON.parse(JSON.stringify(selectedPuzzle.data));
         boardData = JSON.parse(JSON.stringify(selectedPuzzle.data));
     } else {
-        // 制作モードの場合、盤面データはボタンクリック時に設定される
-        currentPuzzleIndex = -1; // 制作モードはインデックス管理不要
+        currentPuzzleIndex = -1; 
     }
 
     isCountryMode = isCountry;
@@ -288,21 +271,17 @@ function startGame(isCountry, isCreation) {
     
     const modeName = isCountry ? '国名ケシマス' : '首都名ケシマス';
     
-    // 一番上のタイトルを変更
     document.getElementById('current-game-title').textContent = modeName; 
     
-    // 問題番号の表示を「クリア数 + 1」に戻す
     const currentClearCount = playerStats[mode + '_clears'] || 0;
     const nextProblemNumber = currentClearCount + 1;
     
-    // 問題に関する情報 (制作モードか、次の問題番号か)
     document.getElementById('problem-number-display').textContent = 
         isCreation 
         ? '問題制作モード' 
-        : `第 ${nextProblemNumber} 問`; // 例: 第 1 問
+        : `第 ${nextProblemNumber} 問`; 
         
-    // 制作者名を表示するロジック
-    let creatorName = '銀の焼き鳥'; // 標準問題のデフォルト制作者名
+    let creatorName = '銀の焼き鳥'; 
     if (isCreation) {
         creatorName = currentPlayerNickname;
     } else if (currentPuzzleIndex !== -1) {
@@ -311,14 +290,12 @@ function startGame(isCountry, isCreation) {
     document.getElementById('creator-display').textContent = `制作者: ${creatorName}`;
         
     updateStatusDisplay();
-    // 盤面表示を5行に戻す
     renderBoard(5); 
     showScreen('mainGame');
 }
 
 function renderBoard(visibleRows) { 
     boardElement.innerHTML = '';
-    // 盤面表示を visibleRows (通常5行) に基づいて行う
     const startRow = boardData.length - visibleRows; 
     
     for (let r = startRow; r < boardData.length; r++) {
@@ -377,6 +354,36 @@ async function updatePlayerScore(mode) {
     }
 }
 
+/**
+ * ★★★ 修正箇所 5: 問題制作モードでクリアした問題をサーバーに登録する関数 ★★★
+ */
+async function submitNewPuzzle(mode, boardData, creator) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/puzzles`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                mode: mode,
+                boardData: boardData,
+                creator: creator
+            })
+        });
+        
+        if (!response.ok) throw new Error('問題登録サーバーエラー');
+
+        const data = await response.json();
+        
+        alert(`🎉 問題の登録に成功しました！\n制作者：${data.puzzle.creator}\nこの問題は今後、標準問題として出題されます。`);
+        
+        // 問題リストを再ロードしてホーム画面の問題数を更新
+        await loadPuzzles();
+        
+    } catch (error) {
+        console.error("問題登録に失敗しました。", error);
+        alert("問題の登録に失敗しました。サーバーが起動しているか、API_BASE_URLが正しいか確認してください。");
+    }
+}
+
 async function checkGameStatus() { 
     const totalChars = boardData.flat().filter(char => char !== '').length;
     
@@ -386,22 +393,33 @@ async function checkGameStatus() {
         
         if (!isCreationPlay) {
             // 標準問題のクリア処理
-            if (currentPuzzleIndex !== -1) {
-                markPuzzleAsCleared(mode, currentPuzzleIndex); // LocalStorageにクリアを記録
+            const problemList = allPuzzles[mode];
+            const currentPuzzle = problemList[currentPuzzleIndex];
+            
+            if (currentPuzzle && currentPuzzle.id) {
+                markPuzzleAsCleared(mode, currentPuzzle.id); // LocalStorageにIDでクリアを記録
             }
 
             await updatePlayerScore(mode); 
             const nextClearCount = playerStats[mode + '_clears'];
             alert(`🎉 全ての文字を消去しました！クリアです！\nあなたの${modeName}クリア数は${nextClearCount}問になりました。`);
         } else {
-            alert("🎉 作成した問題をクリアしました！\nこの問題を登録できます。(ランキング反映なし)");
+            // ★★★ 修正箇所 6: 制作モードのクリア処理で問題登録を呼び出す ★★★
+            const registrationConfirmed = confirm("🎉 作成した問題をクリアしました！\nこの問題を標準問題として登録しますか？");
+            
+            if (registrationConfirmed) {
+                const finalBoard = JSON.parse(JSON.stringify(initialPlayData));
+                await submitNewPuzzle(mode, finalBoard, currentPlayerNickname);
+            } else {
+                alert("問題の登録をスキップしました。");
+            }
         }
         showScreen('home');
     }
 }
 
 
-// --- 3. ゲームロジックの中核 ---
+// --- 3. ゲームロジックの中核 (省略: 修正なし) ---
 
 function applyGravity() { 
     for (let c = 0; c < 5; c++) {
@@ -474,10 +492,10 @@ function handleCellClick(event) {
     }
     
     eraseButton.disabled = selectedCells.length < 2;
-    renderBoard(5); // 5行表示
+    renderBoard(5); 
 }
 
-/** 消去ボタンイベントリスナー (Fの文字置き換えロジック修正済み) */
+/** 消去ボタンイベントリスナー (修正なし) */
 eraseButton.addEventListener('click', async () => { 
     if (selectedCells.length < 2) return;
 
@@ -541,24 +559,20 @@ eraseButton.addEventListener('click', async () => {
     selectedCells = [];
     eraseButton.disabled = true;
     
-    renderBoard(5); // 5行表示
+    renderBoard(5); 
     updateStatusDisplay();
     await checkGameStatus();
 });
 
 resetBtn.addEventListener('click', () => { 
-    // リセットボタンを押したときの処理
     if (isCreationPlay) {
-        // 制作モードの場合、制作画面に戻る
         showScreen('create');
-        
-        // 元々入力完了後に押せるようになっていたボタンを有効に戻す
         btnInputComplete.disabled = false;
         document.getElementById('create-status').textContent = '入力完了！解答を開始できます。';
         
     } else if (currentPuzzleIndex !== -1) {
-        // 標準問題のリセット
-        const problemList = isCountryMode ? initialBoardData_Country_List : initialBoardData_Capital_List;
+        // ★★★ 修正箇所 7: problemListをallPuzzlesから取得 ★★★
+        const problemList = isCountryMode ? allPuzzles.country : allPuzzles.capital;
         const selectedPuzzle = problemList[currentPuzzleIndex];
         
         initialPlayData = JSON.parse(JSON.stringify(selectedPuzzle.data));
@@ -567,13 +581,13 @@ resetBtn.addEventListener('click', () => {
         usedWords = [];
         eraseButton.disabled = true;
         
-        renderBoard(5); // 5行表示
+        renderBoard(5); 
         updateStatusDisplay();
     }
 });
 
 
-// --- 4. 問題制作モードのロジック ---
+// --- 4. 問題制作モードのロジック (省略: 修正なし) ---
 
 function renderCreateBoard() { 
     createBoardElement.innerHTML = '';
@@ -645,14 +659,13 @@ btnInputComplete.addEventListener('click', () => {
     const modeSelect = document.getElementById('creation-mode-select');
     const isCountry = modeSelect.value === 'country';
 
-    // 制作モードでは、問題選択ロジックをスキップし、盤面データとisCreationフラグを渡す
     initialPlayData = JSON.parse(JSON.stringify(newBoard));
     boardData = JSON.parse(JSON.stringify(newBoard));
     startGame(isCountry, true); 
 });
 
 
-// --- 5. ランキングロジック ---
+// --- 5. ランキングロジック (修正なし) ---
 
 const rankingScreen = document.getElementById('ranking-screen');
 const rankingTabs = document.getElementById('ranking-tabs');
@@ -676,7 +689,7 @@ async function fetchAndDisplayRanking(type) {
         
         rankings.forEach(item => {
             const isCurrentPlayer = item.nickname === currentPlayerNickname;
-            html += `<tr style="${isCurrentPlayer ? 'background-color: #ffe0b2; font-weight: bold;' : ''}"><td>${item.rank}</td><td>${item.nickname}</td><td>${item.score}</td></tr>`;
+            html += `<tr style="${isCurrentPlayer ? 'background-color: #554400; font-weight: bold; color:#FFD700;' : ''}"><td>${item.rank}</td><td>${item.nickname}</td><td>${item.score}</td></tr>`;
         });
         
         html += '</table>';
@@ -684,21 +697,20 @@ async function fetchAndDisplayRanking(type) {
 
     } catch (error) {
         console.error("ランキング取得に失敗しました。", error);
-        container.innerHTML = `<p style="color:red;">ランキング取得エラー: サーバー（Node.js）が起動しているか確認してください。また、フロントエンドのAPI_BASE_URLが正しいか確認してください。</p>`;
+        container.innerHTML = `<p style="color:red;">ランキング取得エラー: サーバーが起動しているか確認してください。</p>`;
     }
 }
 
 
-// --- 6. イベントリスナーの設定 ---
+// --- 6. イベントリスナーの設定 (修正なし) ---
 
 document.getElementById('btn-country-mode').addEventListener('click', () => {
-    startGame(true, false); // isCountry=true, isCreation=false
+    startGame(true, false); 
 });
 document.getElementById('btn-capital-mode').addEventListener('click', () => {
-    startGame(false, false); // isCountry=false, isCreation=false
+    startGame(false, false); 
 });
 document.getElementById('btn-create-mode').addEventListener('click', () => {
-    // ゲストユーザーは制作モードを利用できない
     if (currentPlayerNickname === 'ゲスト') {
         alert("問題制作モードを利用するには、ニックネームとパスコードを設定してログインしてください。");
         promptForNickname(true);

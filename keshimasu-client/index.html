@@ -3,71 +3,99 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>国名ケシマス</title>
+    <title>国名・首都名ケシマス</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="game-container">
-        
+    <div id="app-container">
+        <h1>国名・首都名ケシマス</h1>
 
-        <div id="home-screen">
-            <button id="btn-country-mode">国名ケシマスを始める</button>
-            <button id="btn-capital-mode">首都名ケシマスを始める</button>
-            <button id="btn-create-mode">問題制作モード</button>
-            <button id="btn-ranking">ランキングを見る</button>
+        <div id="home-screen" class="screen">
+            <p>ルール：縦または横に連続する文字を国名または首都名にすることで消去できます。Fは自由な一文字に置き換えられます。全ての文字を消去してクリアを目指しましょう！</p>
+            
+            <div class="mode-selection">
+                <div class="mode-card">
+                    
+                    <button id="btn-country-mode">国名ケシマスを解く</button>
+                    <span id="country-problem-count" class="problem-count-display">問題数: 0問</span>
+                </div>
+                
+                <div class="mode-card">
+                    
+                    <button id="btn-capital-mode">首都名ケシマスを解く</button>
+                    <span id="capital-problem-count" class="problem-count-display">問題数: 0問</span>
+                </div>
+
+                <div class="mode-card">
+                    
+                    <button id="btn-create-mode">問題を作る</button>
+                </div>
+
+                <div class="mode-card">
+                   
+                    <button id="btn-ranking">ランキング</button>
+                </div>
+            </div>
         </div>
 
-        <div id="main-game-screen" style="display: none;">
-            <h2 id="current-game-title"></h2> 
-            <p id="problem-number-display" style="font-size: 1.5em; font-weight: bold; margin-top: -10px;"></p>
-
-            <p id="creator-display" style="font-size: 0.9em; margin-top: 5px; color: #6c757d;"></p>
+        <div id="main-game-screen" class="screen" style="display:none;">
+            <div class="game-header">
+                <h2 id="current-game-title">国名ケシマス</h2>
+                <div class="game-info">
+                    <span id="problem-number-display" class="info-tag">第 1 問</span>
+                    <span id="creator-display" class="info-tag">制作者: 銀の焼き鳥</span>
+                </div>
+            </div>
 
             <div id="board" class="board-grid">
                 </div>
-
-            <div id="controls">
-                <button id="erase-button" disabled>消去確定</button>
-                <button id="reset-button">リセット</button>
-            </div>
-
-            <div id="status">
-                使用済み単語: <span id="used-words-display"></span>
-            </div>
-            <button id="btn-back-to-home">ホームに戻る</button>
-        </div>
-
-        <div id="create-puzzle-screen" style="display: none;">
-            <h2>問題制作モード</h2>
-            <p>8x5マスすべてに文字を入力してください。「F」は「フリー」の意味で好きな文字にできます</p>
             
-            <div id="create-board" class="create-grid"></div>
-
-            <div id="create-controls">
+            <div class="control-panel">
+                <button id="erase-button" disabled>消去する</button>
+                <button id="reset-button" class="secondary-btn">リセット</button>
+            </div>
+            
+            <div class="status-panel">
+                <p>使用済みワード: <span id="used-words-display">なし</span></p>
+                <button id="btn-back-to-home" class="secondary-btn">ホームに戻る</button>
+            </div>
+        </div>
+        
+        <div id="create-puzzle-screen" class="screen" style="display:none;">
+            <h2>問題制作モード</h2>
+            <p>8x5マス全てに、カタカナ一文字か「F」（ワイルドカード）を入力してください。</p>
+            
+            <div class="create-controls">
+                <label for="creation-mode-select">判定モード:</label>
                 <select id="creation-mode-select">
-                    <option value="country">国名ケシマス用</option>
-                    <option value="capital">首都名ケシマス用</option>
+                    <option value="country">国名ケシマス</option>
+                    <option value="capital">首都名ケシマス</option>
                 </select>
                 <button id="btn-input-complete" disabled>入力完了 & 解答開始</button>
-                <button id="btn-create-back">ホームに戻る</button>
             </div>
+            
             <p id="create-status">残り40マスに入力が必要です。</p>
+            <div id="create-board" class="board-grid create-grid">
+                </div>
+            
+            <button id="btn-create-back" class="secondary-btn">ホームに戻る</button>
         </div>
 
-        <div id="ranking-screen" style="display: none;">
+        <div id="ranking-screen" class="screen" style="display:none;">
             <h2>ランキング</h2>
-            <p id="ranking-nickname-display"></p>
             <div id="ranking-tabs">
                 <button data-type="total">総合</button>
                 <button data-type="country">国名</button>
                 <button data-type="capital">首都名</button>
             </div>
+            <p id="ranking-nickname-display">あなたの記録: ゲスト</p>
             <div id="ranking-list-container">
                 </div>
-            <button id="btn-ranking-back">ホームに戻る</button>
+            <button id="btn-ranking-back" class="secondary-btn">ホームに戻る</button>
         </div>
         
     </div>
+
     <script src="script.js"></script>
 </body>
 </html>
