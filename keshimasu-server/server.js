@@ -1,221 +1,165 @@
-// ----------------------------------------------------
-// Node.js (Express) サーバーコード - server.js (フルコード)
-// ----------------------------------------------------
 const express = require('express');
+const bodyParser = require('body-parser');
 const cors = require('cors');
-const { Pool } = require('pg'); 
-const bcrypt = require('bcryptjs'); // bcryptjsを使用
+// uuidパッケージが必要です: npm install uuid
+const { v4: uuidv4 } = require('uuid'); 
+
 const app = express();
+const PORT = process.env.PORT || 3000;
 
-const PORT = process.env.PORT || 3000; 
-const SALT_ROUNDS = 10; 
+// CORS設定: すべてのオリジンからのアクセスを許可
+app.use(cors());
+app.use(bodyParser.json());
 
-// RenderのPostgreSQLデータベース接続設定
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
+// --- サーバー側のインメモリ・データベース (問題はここに移管) ---
+
+let players = {
+    // デフォルトユーザーの初期データ
+    'default-user-id': {
+        id: 'default-user-id', 
+        nickname: '銀の焼き鳥', 
+        passcode: '0425',
+        country_clears: 0, 
+        capital_clears: 0
+    }
+};
+
+// 問題データ (クライアントの初期問題をこちらに移管)
+let puzzles = {
+    country: [
+        { 
+            id: uuidv4(),
+            data: [
+                ['マ', 'ベ', 'ナ', 'ン', 'マ'], 
+                ['ル', 'サ', 'モ', 'ア', 'リ'], 
+                ['タ', 'イ', 'エ', 'メ', 'ン'], 
+                ['ニ', 'ホ', 'ン', 'F', 'グ'],
+                ['ア', 'メ', 'リ', 'カ', 'F'],
+                ['イ', 'ギ', 'リ', 'ス', 'F'],
+                ['ド', 'イ', 'ツ', 'リ', 'マ'],
+                ['ラ', 'ト', 'ビ', 'ア', 'ラ']
+            ], 
+            creator: '銀の焼き鳥',
+            timestamp: 1 
+        },
+    ],
+    capital: [
+        { 
+            id: uuidv4(),
+            data: [
+                ['パ', 'ラ', 'ソ', 'ウ', 'ル'], 
+                ['ザ', 'タ', 'マ', 'リ', 'ボ'], 
+                ['F', 'リ', 'ぺ', 'キ', 'ン'], 
+                ['レ', 'ン', 'リ', 'ガ', 'ベ'],
+                ['F', 'ボ', 'F', 'タ', 'F'],
+                ['ダ', 'ブ', 'リ', 'ン', 'ル'],
+                ['パ', 'リ', 'ジ', 'ャ', 'ー'],
+                ['ア', 'ブ', 'リ', 'マ', 'ト']
+            ], 
+            creator: '銀の焼き鳥',
+            timestamp: 1 
+        },
+    ]
+};
+
+// ----------------------------------------------------
+// APIエンドポイント
+// ----------------------------------------------------
+
+// 1. 問題取得エンドポイント (GET /api/puzzles/country または /capital)
+app.get('/api/puzzles/:mode', (req, res) => {
+    const { mode } = req.params;
+    if (mode === 'country' || mode === 'capital') {
+        // 古い問題から順番に出題するため、timestampでソートして返す
+        const sortedPuzzles = puzzles[mode].sort((a, b) => a.timestamp - b.timestamp);
+        res.json(sortedPuzzles);
+    } else {
+        res.status(400).send({ message: '無効なモードです。' });
+    }
 });
 
-app.use(cors()); 
-app.use(express.json()); 
-
-// ----------------------------------------------------
-// データベース初期化
-// ----------------------------------------------------
-async function initializeDatabase() {
-    try {
-        const client = await pool.connect();
-        
-        // プレイヤーテーブルが存在しない場合、作成する
-        const createTableQuery = `
-            CREATE TABLE IF NOT EXISTS players (
-                id SERIAL PRIMARY KEY,
-                nickname VARCHAR(10) UNIQUE NOT NULL,
-                passcode_hash VARCHAR(255),
-                country_clears INTEGER DEFAULT 0,
-                capital_clears INTEGER DEFAULT 0,
-                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            -- 既存のテーブルにカラムがない場合にのみ追加 (安全のため)
-            DO $$ BEGIN
-                ALTER TABLE players ADD COLUMN passcode_hash VARCHAR(255);
-            EXCEPTION
-                WHEN duplicate_column THEN null;
-            END $$;
-        `;
-        await client.query(createTableQuery);
-        console.log("✅ データベース接続およびテーブル作成/修正に成功しました。");
-        client.release();
-        
-    } catch (err) {
-        console.error("❌ データベースの初期化エラー:", err);
+// 2. 問題登録エンドポイント (POST /api/puzzles) (新規追加)
+app.post('/api/puzzles', (req, res) => {
+    const { mode, boardData, creator } = req.body;
+    
+    if (!mode || !boardData || !creator) {
+        return res.status(400).send({ message: '問題データが不完全です。' });
     }
-}
+
+    const newPuzzle = {
+        id: uuidv4(),
+        data: boardData,
+        creator: creator,
+        timestamp: Date.now() // 登録時刻を記録
+    };
+
+    puzzles[mode].push(newPuzzle);
+    
+    res.status(201).send({ message: '新しい問題が標準リストに登録されました！', puzzle: newPuzzle });
+});
 
 
-// ----------------------------------------------------
-// 1. 認証/登録API: POST /api/player/register
-// ----------------------------------------------------
-app.post('/api/player/register', async (req, res) => {
+// 3. プレイヤー認証、スコア更新、ランキングAPI (既存ロジックは省略)
+
+app.post('/api/player/register', (req, res) => {
     const { nickname, passcode } = req.body;
-    
-    if (!nickname || !passcode) {
-        return res.status(400).json({ message: "ニックネームとパスコードが必要です。" });
-    }
-    if (nickname.toLowerCase() === 'ゲスト') {
-        return res.status(400).json({ message: "ニックネームとして「ゲスト」は使用できません。" });
-    }
+    let player = Object.values(players).find(p => p.nickname === nickname);
 
-    try {
-        // ニックネームでプレイヤーを検索
-        let result = await pool.query('SELECT * FROM players WHERE nickname = $1', [nickname]);
-        let player = result.rows[0];
-
-        if (player) {
-            // --- ログイン処理 ---
-            if (!player.passcode_hash) {
-                return res.status(401).json({ message: "既存のユーザーですが、パスコードが設定されていません。別のニックネームを使ってください。" });
-            }
-            
-            // bcryptjsでパスコードを比較
-            const match = await bcrypt.compare(passcode, player.passcode_hash);
-            
-            if (match) {
-                console.log(`既存プレイヤー認証成功: ID${player.id}, ${nickname}`);
-                return res.json({ 
-                    message: "ログイン成功",
-                    player: {
-                        id: player.id,
-                        nickname: player.nickname,
-                        country_clears: player.country_clears,
-                        capital_clears: player.capital_clears
-                    }
-                });
-            } else {
-                return res.status(401).json({ message: "パスコードが正しくありません。" });
-            }
-            
+    if (player) {
+        if (player.passcode === passcode) {
+            res.json({ message: 'ログイン成功', player: player });
         } else {
-            // --- 新規登録処理 ---
-            // bcryptjsでパスコードをハッシュ化
-            const passcodeHash = await bcrypt.hash(passcode, SALT_ROUNDS);
-            
-            const insertQuery = `
-                INSERT INTO players (nickname, passcode_hash)
-                VALUES ($1, $2)
-                RETURNING id, nickname, country_clears, capital_clears
-            `;
-            result = await pool.query(insertQuery, [nickname, passcodeHash]);
-            player = result.rows[0];
-            
-            console.log(`新規プレイヤー登録成功: ID${player.id}, ${nickname}`);
-            return res.json({ 
-                message: "新規登録成功",
-                player: {
-                    id: player.id,
-                    nickname: player.nickname,
-                    country_clears: player.country_clears,
-                    capital_clears: player.capital_clears
-                }
-            });
+            res.status(401).send({ message: 'パスコードが違います。' });
         }
-    } catch (error) {
-        console.error("プレイヤー認証/登録エラー:", error);
-        if (error.code === '23505') { 
-             return res.status(409).json({ message: "そのニックネームは既に使用されています。ログインしてください。" });
-        }
-        res.status(500).json({ message: "サーバーエラーが発生しました。" });
+    } else {
+        const newId = uuidv4();
+        player = { id: newId, nickname, passcode, country_clears: 0, capital_clears: 0 };
+        players[newId] = player;
+        res.json({ message: '新規登録成功', player: player });
     }
 });
 
-
-// ----------------------------------------------------
-// 2. スコア更新API: POST /api/score/update
-// ----------------------------------------------------
-app.post('/api/score/update', async (req, res) => {
+app.post('/api/score/update', (req, res) => {
     const { playerId, mode } = req.body;
-    
-    if (!playerId || !['country', 'capital'].includes(mode)) {
-        return res.status(400).json({ message: "無効なリクエストです。" });
+    const player = players[playerId];
+
+    if (!player) {
+        return res.status(404).send({ message: 'プレイヤーが見つかりません。' });
     }
-    
-    const scoreKey = mode + '_clears';
-    
-    try {
-        const updateQuery = `
-            UPDATE players
-            SET ${scoreKey} = ${scoreKey} + 1, last_updated = CURRENT_TIMESTAMP
-            WHERE id = $1
-            RETURNING ${scoreKey}
-        `;
-        const result = await pool.query(updateQuery, [playerId]);
 
-        if (result.rowCount === 0) {
-            return res.status(404).json({ message: "プレイヤーが見つかりません。" });
-        }
-
-        const newScore = result.rows[0][scoreKey];
-        console.log(`スコア更新: ID${playerId} (${mode}: ${newScore})`);
-
-        res.json({ message: "スコア更新成功", newScore });
-    } catch (error) {
-        console.error("スコア更新エラー:", error);
-        res.status(500).json({ message: "サーバーエラーが発生しました。" });
+    const scoreKey = `${mode}_clears`;
+    if (player.hasOwnProperty(scoreKey)) {
+        player[scoreKey] += 1;
+        res.json({ message: 'スコア更新成功', newScore: player[scoreKey] });
+    } else {
+        res.status(400).send({ message: '無効なモードです。' });
     }
 });
 
-
-// ----------------------------------------------------
-// 3. ランキング取得API: GET /api/rankings/:type
-// ----------------------------------------------------
-app.get('/api/rankings/:type', async (req, res) => {
-    const type = req.params.type;
-    let orderByClause = '';
+app.get('/api/rankings/:type', (req, res) => {
+    const { type } = req.params;
+    let rankingData = Object.values(players);
 
     if (type === 'total') {
-        orderByClause = '(country_clears + capital_clears) DESC';
+        rankingData.forEach(p => p.score = p.country_clears + p.capital_clears);
     } else if (type === 'country' || type === 'capital') {
-        const key = type + '_clears';
-        orderByClause = `${key} DESC`;
+        rankingData.forEach(p => p.score = p[`${type}_clears`]);
     } else {
-        return res.status(400).json({ message: "無効なランキングタイプです。" });
+        return res.status(400).send({ message: '無効なランキングタイプです。' });
     }
 
-    try {
-        const selectQuery = `
-            SELECT 
-                nickname, 
-                country_clears, 
-                capital_clears,
-                (country_clears + capital_clears) as total_clears
-            FROM players 
-            WHERE nickname != 'ゲスト'
-            ORDER BY ${orderByClause}, last_updated ASC
-            LIMIT 10
-        `;
-        
-        const result = await pool.query(selectQuery);
-        
-        const ranking = result.rows.map((p, index) => ({
-            rank: index + 1,
-            nickname: p.nickname,
-            score: type === 'total' ? p.total_clears : p[type + '_clears']
-        }));
+    rankingData.sort((a, b) => b.score - a.score);
 
-        res.json(ranking);
+    const rankings = rankingData.map((p, index) => ({
+        rank: index + 1,
+        nickname: p.nickname,
+        score: p.score
+    }));
 
-    } catch (error) {
-        console.error("ランキング取得エラー:", error);
-        res.status(500).json({ message: "サーバーエラーが発生しました。" });
-    }
+    res.json(rankings);
 });
 
 
-// サーバー起動とDB初期化
-initializeDatabase().then(() => {
-    app.listen(PORT, () => {
-        console.log(`==================================================`);
-        console.log(`★ Node.js Server running on port ${PORT}`);
-        console.log(`==================================================`);
-    });
+app.listen(PORT, () => {
+    console.log(`サーバーはポート ${PORT} で起動中です`);
 });
