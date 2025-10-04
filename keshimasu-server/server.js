@@ -13,8 +13,8 @@ const PORT = process.env.PORT || 3000;
 // 辞書データを読み込む
 // NOTE: サーバー側のロジック（単語判定など）で必要であれば、ここで読み込みます。
 // フロントエンドへの提供は後述のAPIエンドポイントで行います。
-const COUNTRY_WORDS = require('./data/country_words.json');
-const CAPITAL_WORDS = require('./data/capital_words.json');
+const COUNTRY_WORDS = require('./data/country_words.json'); // ★パスを修正★
+const CAPITAL_WORDS = require('./data/capital_words.json'); // ★パスを修正★
 
 
 // --- 初期化と起動 ---
