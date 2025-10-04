@@ -1,7 +1,8 @@
 // keshimasu-server/init_db.js
 const db = require('./db');
 // パスワード認証にbcryptを使用
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs'); // ★ここを修正★
+
 const WORDS = require('./data/word_lists'); // 問題テスト用辞書
 
 async function initializeDatabase() {
