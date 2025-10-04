@@ -2,8 +2,9 @@
 // フロントエンド JavaScript コード - script.js
 // ----------------------------------------------------
 
-// ★APIのURLを定義 (ローカルで動かす場合)
-const API_BASE_URL = 'https://kokumei-keshimasu.onrender.com/api';
+// ★APIのURLを定義 (Renderデプロイ時に、ここにWeb ServiceのURLを設定してください)
+// 例: const API_BASE_URL = 'https://keshimasu-server-xyz.onrender.com/api'; 
+const API_BASE_URL = 'http://localhost:3000/api'; 
 
 // --- 1. 定数と初期データ ---
 
@@ -113,7 +114,6 @@ async function registerPlayer(nickname) {
         }
     } catch (error) {
         console.error("サーバー登録に失敗しました。", error);
-        // alert("サーバーに接続できません。ゲームを続行しますが、スコアは記録されません。"); 
         currentPlayerNickname = "ゲスト";
         currentPlayerId = null;
     }
@@ -128,7 +128,7 @@ function showScreen(screenName) {
     });
 }
 
-function startGame(initialData, isCountry, isCreation) {
+function startGame(initialData, isCountry, isCreation, creatorName = '標準問題') {
     initialPlayData = JSON.parse(JSON.stringify(initialData));
     boardData = JSON.parse(JSON.stringify(initialData));
     isCountryMode = isCountry;
@@ -141,7 +141,6 @@ function startGame(initialData, isCountry, isCreation) {
     const mode = isCountry ? 'country' : 'capital';
     const modeName = isCountry ? '国名ケシマス' : '首都名ケシマス';
     
-    // ★ 修正点 1: 新しいタイトルと問題番号を表示 ★
     document.getElementById('current-game-title').textContent = modeName;
     
     const currentClearCount = playerStats[mode + '_clears'] || 0;
@@ -149,6 +148,13 @@ function startGame(initialData, isCountry, isCreation) {
     
     document.getElementById('problem-number-display').textContent = 
         isCreation ? '問題制作モード' : `第 ${nextProblemNumber} 問`;
+        
+    // ★ 制作者名を表示するロジック ★
+    if (isCreation) {
+        document.getElementById('creator-display').textContent = `制作者: ${creatorName}`;
+    } else {
+        document.getElementById('creator-display').textContent = `制作者: 標準問題`;
+    }
         
     updateStatusDisplay();
     renderBoard(5);
@@ -400,11 +406,14 @@ eraseButton.addEventListener('click', async () => {
 });
 
 resetBtn.addEventListener('click', () => { 
+    // リセット時、制作モードでプレイしていた場合はその制作者名を再度渡す必要があるが、
+    // initialPlayDataには制作者情報は含まれないため、ここでは標準問題としてリセット
+    // ※問題制作モードのローカルリセットなのでこれでOK
     startGame(initialPlayData, isCountryMode, isCreationPlay); 
 });
 
 
-// --- 4. 問題制作モードのロジック (省略) ---
+// --- 4. 問題制作モードのロジック (制作者名受け渡しを修正) ---
 
 function renderCreateBoard() { 
     createBoardElement.innerHTML = '';
@@ -476,7 +485,8 @@ btnInputComplete.addEventListener('click', () => {
     const modeSelect = document.getElementById('creation-mode-select');
     const isCountry = modeSelect.value === 'country';
 
-    startGame(newBoard, isCountry, true); 
+    // ★ 修正済み: 制作者名としてcurrentPlayerNicknameを渡す ★
+    startGame(newBoard, isCountry, true, currentPlayerNickname); 
 });
 
 
@@ -512,7 +522,7 @@ async function fetchAndDisplayRanking(type) {
 
     } catch (error) {
         console.error("ランキング取得に失敗しました。", error);
-        container.innerHTML = `<p style="color:red;">ランキング取得エラー: サーバー（Node.js）が起動しているか確認してください。</p>`;
+        container.innerHTML = `<p style="color:red;">ランキング取得エラー: サーバー（Node.js）が起動しているか確認してください。また、フロントエンドのAPI_BASE_URLが正しいか確認してください。</p>`;
     }
 }
 
