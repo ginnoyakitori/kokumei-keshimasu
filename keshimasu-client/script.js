@@ -1,35 +1,89 @@
 // ----------------------------------------------------
-// フロントエンド JavaScript コード - script.js (最終修正版)
+// フロントエンド JavaScript コード - script.js (フルコード)
 // ----------------------------------------------------
 
-// ★APIのURLを定義 (Renderデプロイ時に、ここにWeb ServiceのURLを設定してください)
-// 例: const API_BASE_URL = 'https://keshimasu-server-xyz.onrender.com/api'; 
+// ★★★ 🚨 要修正 ★★★
+// あなたのRender Web ServiceのURLに必ず置き換えてください。
 const API_BASE_URL = 'https://kokumei-keshimasu.onrender.com/api'; 
+
 // --- 1. 定数と初期データ ---
 
-// 国名ケシマス用初期盤面 (ユーザー指定の最新版)
-const initialBoardData_Country = [
-    ['マ', 'ベ', 'ナ', 'ン', 'マ'], 
-    ['ル', 'サ', 'モ', 'ア', 'リ'], 
-    ['タ', 'イ', 'エ', 'メ', 'ン'], 
-    ['ニ', 'ホ', 'ン', 'F', 'グ'],
-    ['ア', 'メ', 'リ', 'カ', 'F'],
-    ['イ', 'ギ', 'リ', 'ス', 'F'],
-    ['ド', 'イ', 'ツ', 'リ', 'マ'],
-    ['ラ', 'ト', 'ビ', 'ア', 'ラ']
+// 国名ケシマス用初期盤面リスト
+const initialBoardData_Country_List = [
+    // 問題 0 (最も古い問題として優先出題)
+    { 
+        data: [
+            ['マ', 'ベ', 'ナ', 'ン', 'マ'], 
+            ['ル', 'サ', 'モ', 'ア', 'リ'], 
+            ['タ', 'イ', 'エ', 'メ', 'ン'], 
+            ['ニ', 'ホ', 'ン', 'F', 'グ'],
+            ['ア', 'メ', 'リ', 'カ', 'F'],
+            ['イ', 'ギ', 'リ', 'ス', 'F'],
+            ['ド', 'イ', 'ツ', 'リ', 'マ'],
+            ['ラ', 'ト', 'ビ', 'ア', 'ラ']
+        ], 
+        creator: '銀の焼き鳥' 
+    },
+    // 問題 1: ダミー問題
+    { 
+        data: [
+            ['セ', 'カ', 'イ', 'イ', 'エ'], ['ノ', 'キ', 'ュ', 'ウ', 'ビ'], 
+            ['タ', 'イ', 'ワ', 'ン', 'ワ'], ['ニ', 'ホ', 'ン', 'F', 'ラ'],
+            ['ア', 'メ', 'リ', 'カ', 'ス'], ['イ', 'ギ', 'リ', 'ス', 'マ'],
+            ['ド', 'イ', 'ツ', 'フ', 'ス'], ['オ', 'ー', 'ス', 'ト', 'ラ']
+        ], 
+        creator: '銀の焼き鳥' 
+    },
+    // 問題 2: ダミー問題
+    { 
+        data: [
+            ['ア', 'イ', 'ウ', 'エ', 'オ'], ['カ', 'キ', 'ク', 'ケ', 'コ'], 
+            ['サ', 'シ', 'ス', 'セ', 'ソ'], ['タ', 'チ', 'ツ', 'テ', 'ト'],
+            ['ナ', 'ニ', 'ヌ', 'ネ', 'ノ'], ['ハ', 'ヒ', 'フ', 'ヘ', 'ホ'],
+            ['マ', 'ミ', 'ム', 'メ', 'モ'], ['ヤ', 'ユ', 'ヨ', 'ワ', 'ン']
+        ], 
+        creator: '銀の焼き鳥' 
+    }
 ];
 
-// ★ 首都名ケシマス用初期盤面 (ユーザー指定の新規盤面) ★
-const initialBoardData_Capital = [
-    ['パ', 'ラ', 'ソ', 'ウ', 'ル'], 
-    ['ザ', 'タ', 'マ', 'リ', 'ボ'], 
-    ['F', 'リ', 'ペ', 'キ', 'ン'], 
-    ['レ', 'ン', 'リ', 'ガ', 'ベ'],
-    ['F', 'ボ', 'F', 'タ', 'F'],
-    ['ダ', 'ブ', 'リ', 'ン', 'ル'],
-    ['パ', 'リ', 'ジ', 'ャ', 'ー'],
-    ['ア', 'ブ', 'リ', 'マ', 'ト']
+// 首都名ケシマス用初期盤面リスト
+const initialBoardData_Capital_List = [
+    // 問題 0 (最も古い問題として優先出題)
+    { 
+        data: [
+            ['パ', 'ラ', 'ソ', 'ウ', 'ル'], 
+            ['ザ', 'タ', 'マ', 'リ', 'ボ'], 
+            ['F', 'リ', 'ぺ', 'キ', 'ン'], 
+            ['レ', 'ン', 'リ', 'ガ', 'ベ'],
+            ['F', 'ボ', 'F', 'タ', 'F'],
+            ['ダ', 'ブ', 'リ', 'ン', 'ル'],
+            ['パ', 'リ', 'ジ', 'ャ', 'ー'],
+            ['ア', 'ブ', 'リ', 'マ', 'ト']
+        ], 
+        creator: '銀の焼き鳥' 
+    },
+    // 問題 1: ダミー問題
+    { 
+        data: [
+            ['ト', 'ウ', 'キ', 'ョ', 'ウ'], ['パ', 'リ', 'ロ', 'ン', 'ド'], 
+            ['ン', 'ベ', 'ル', 'リ', 'ン'], ['ロ', 'ー', 'マ', 'マ', 'ド'],
+            ['リ', 'ー', 'ド', 'カ', 'イ'], ['ロ', 'シ', 'ド', 'ニ', 'ー'],
+            ['ア', 'テ', 'ネ', 'プ', 'ラ'], ['ハ', 'ノ', 'イ', 'ソ', 'ウ']
+        ], 
+        creator: '銀の焼き鳥' 
+    },
+    // 問題 2: ダミー問題
+    { 
+        data: [
+            ['ア', 'イ', 'ウ', 'エ', 'オ'], ['カ', 'キ', 'ク', 'ケ', 'コ'], 
+            ['サ', 'シ', 'ス', 'セ', 'ソ'], ['タ', 'チ', 'ツ', 'テ', 'ト'],
+            ['ナ', 'ニ', 'ヌ', 'ネ', 'ノ'], ['ハ', 'ヒ', 'フ', 'ヘ', 'ホ'],
+            ['マ', 'ミ', 'ム', 'メ', 'モ'], ['ヤ', 'ユ', 'ヨ', 'ワ', 'ン']
+        ], 
+        creator: '銀の焼き鳥' 
+    }
 ];
+
 // 辞書データ (テスト用) - カタカナを使用
 const COUNTRY_DICT = [
   "アイスランド","アイルランド","アゼルバイジャン","アフガニスタン","アメリカ",
@@ -85,8 +139,9 @@ let usedWords = [];
 let isCountryMode = true; 
 let isCreationPlay = false; 
 let currentDictionary = COUNTRY_DICT;
+let currentPuzzleIndex = -1; 
 
-// ★ランキング/プレイヤー関連
+// ランキング/プレイヤー関連
 let currentPlayerNickname = "ゲスト";
 let currentPlayerId = null; 
 let playerStats = { 
@@ -125,21 +180,42 @@ function isValidGameChar(char) {
     return /^[\u30a0-\u30ff]$/.test(char); 
 }
 
-// --- サーバー連携・プレイヤー認証 (自動ログイン/登録処理を修正) ---
+// --- LocalStorageによるクリア状態管理 ---
+
+/**
+ * LocalStorageからクリアした問題のインデックスリストを取得する
+ */
+function getClearedPuzzles(mode) {
+    const key = `cleared_puzzles_${mode}`;
+    const cleared = localStorage.getItem(key);
+    return cleared ? JSON.parse(cleared) : [];
+}
+
+/**
+ * LocalStorageにクリアした問題のインデックスを記録する
+ */
+function markPuzzleAsCleared(mode, index) {
+    const key = `cleared_puzzles_${mode}`;
+    let cleared = getClearedPuzzles(mode);
+    if (!cleared.includes(index)) {
+        cleared.push(index);
+        localStorage.setItem(key, JSON.stringify(cleared));
+    }
+}
+
+// --- サーバー連携・プレイヤー認証 ---
 
 async function setupPlayer() {
     currentPlayerId = localStorage.getItem('player_id');
     currentPlayerNickname = localStorage.getItem('keshimasu_nickname') || "ゲスト";
 
-    // ★ 特殊処理: 「銀の焼き鳥」の自動初回登録/ログイン ★
     const defaultNickname = '銀の焼き鳥';
     const defaultPasscode = '0425';
 
+    // 「銀の焼き鳥」の自動初回登録/ログイン
     if (currentPlayerNickname === defaultNickname && currentPlayerId) {
-        // 以前「銀の焼き鳥」としてログインしていた場合、パスコードでログインを試行
         await registerPlayer(defaultNickname, defaultPasscode);
     } else if (currentPlayerNickname === "ゲスト" && !localStorage.getItem('default_user_checked')) {
-        // 初回起動時、まず「銀の焼き鳥」の登録/ログインを試みる（パスコード設定のため）
         localStorage.setItem('default_user_checked', 'true');
         await registerPlayer(defaultNickname, defaultPasscode);
     }
@@ -159,7 +235,6 @@ async function promptForNickname(isInitialRegistration) {
                 alert("ニックネームの入力は必須です。");
                 continue;
             }
-            // ゲストとして続行
             currentPlayerNickname = "ゲスト";
             currentPlayerId = null;
             return;
@@ -201,7 +276,7 @@ async function registerPlayer(nickname, passcode) {
         
         if (!response.ok) {
             console.error(`認証失敗: ${data.message || 'サーバーエラー'}`);
-            if (nickname !== '銀の焼き鳥') { // 銀の焼き鳥の失敗時はエラーメッセージを出さない
+            if (nickname !== '銀の焼き鳥') {
                 alert(`認証失敗: ${data.message || 'サーバーエラー'}`);
             }
             throw new Error(data.message);
@@ -232,13 +307,40 @@ function showScreen(screenName) {
     });
 }
 
-// ★ startGame関数修正: 盤面データをモードによって切り替える ★
+/**
+ * ゲームの開始。未クリアの問題の中からインデックスが最も小さいものを選択する。
+ */
 function startGame(isCountry, isCreation) {
-    // 盤面データの選択
-    const initialData = isCountry ? initialBoardData_Country : initialBoardData_Capital;
+    const mode = isCountry ? 'country' : 'capital';
+    const problemList = isCountry ? initialBoardData_Country_List : initialBoardData_Capital_List;
+    
+    // 制作モードではない場合のみ、問題選択ロジックを実行
+    if (!isCreation) {
+        const clearedIndices = getClearedPuzzles(mode);
+        const availableIndices = problemList
+            .map((_, index) => index)
+            .filter(index => !clearedIndices.includes(index));
 
-    initialPlayData = JSON.parse(JSON.stringify(initialData));
-    boardData = JSON.parse(JSON.stringify(initialData));
+        if (availableIndices.length === 0) {
+            alert(`🎉 ${isCountry ? '国名' : '首都名'}ケシマスのすべての問題をクリアしました！`);
+            showScreen('home');
+            return;
+        }
+
+        // 未クリアの問題の中から、インデックスが最も小さいもの（最も古い問題）を選択
+        const selectedIndex = Math.min(...availableIndices);
+        
+        currentPuzzleIndex = selectedIndex;
+        
+        // 選択された問題データを取得
+        const selectedPuzzle = problemList[selectedIndex];
+        initialPlayData = JSON.parse(JSON.stringify(selectedPuzzle.data));
+        boardData = JSON.parse(JSON.stringify(selectedPuzzle.data));
+    } else {
+        // 制作モードの場合、盤面データはボタンクリック時に設定される
+        currentPuzzleIndex = -1; // 制作モードはインデックス管理不要
+    }
+
     isCountryMode = isCountry;
     isCreationPlay = isCreation; 
     currentDictionary = isCountry ? COUNTRY_DICT : CAPITAL_DICT;
@@ -246,36 +348,38 @@ function startGame(isCountry, isCreation) {
     usedWords = [];
     eraseButton.disabled = true;
     
-    const mode = isCountry ? 'country' : 'capital';
     const modeName = isCountry ? '国名ケシマス' : '首都名ケシマス';
     
-    // ★ タイトルと問題番号の表示修正 ★
-    document.getElementById('current-game-title').textContent = modeName; // 国名ケシマス or 首都名ケシマス
+    // 一番上のタイトルを変更
+    document.getElementById('current-game-title').textContent = modeName; 
     
-    const currentClearCount = playerStats[mode + '_clears'] || 0;
-    const nextProblemNumber = currentClearCount + 1;
+    // 残り問題数 = 全問題数 - クリアした問題数
+    const remainingProblemsCount = problemList.length - getClearedPuzzles(mode).length;
     
-    // 問題制作モードでプレイしている場合は「問題制作モード」と表示
+    // 問題に関する情報 (制作モードか、残り問題数か)
     document.getElementById('problem-number-display').textContent = 
-        isCreation ? '問題制作モード' : `第 ${nextProblemNumber} 問`;
+        isCreation 
+        ? '問題制作モード' 
+        : `残り ${remainingProblemsCount} 問`;
         
-    // ★ 制作者名を表示するロジック ★
+    // 制作者名を表示するロジック
+    let creatorName = '銀の焼き鳥'; // 標準問題のデフォルト制作者名
     if (isCreation) {
-        // 制作モードでプレイする場合、ログイン中のユーザー名を制作者名として表示
-        document.getElementById('creator-display').textContent = `制作者: ${currentPlayerNickname}`;
-    } else {
-        // 標準問題の場合
-        document.getElementById('creator-display').textContent = `制作者: 銀の焼き鳥`;
+        creatorName = currentPlayerNickname;
+    } else if (currentPuzzleIndex !== -1) {
+        creatorName = problemList[currentPuzzleIndex].creator;
     }
+    document.getElementById('creator-display').textContent = `制作者: ${creatorName}`;
         
     updateStatusDisplay();
-    renderBoard(5);
+    renderBoard(8); // ボードを8行表示に固定
     showScreen('mainGame');
 }
 
 function renderBoard(visibleRows) { 
     boardElement.innerHTML = '';
-    const startRow = boardData.length - visibleRows;
+    // 常に0行目から開始し、ボードの全行を表示します
+    const startRow = 0; 
     
     for (let r = startRow; r < boardData.length; r++) {
         for (let c = 0; c < boardData[r].length; c++) {
@@ -341,6 +445,11 @@ async function checkGameStatus() {
         const modeName = isCountryMode ? '国名' : '首都名';
         
         if (!isCreationPlay) {
+            // 標準問題のクリア処理
+            if (currentPuzzleIndex !== -1) {
+                markPuzzleAsCleared(mode, currentPuzzleIndex); // LocalStorageにクリアを記録
+            }
+
             await updatePlayerScore(mode); 
             const nextClearCount = playerStats[mode + '_clears'];
             alert(`🎉 全ての文字を消去しました！クリアです！\nあなたの${modeName}クリア数は${nextClearCount}問になりました。`);
@@ -425,7 +534,7 @@ function handleCellClick(event) {
     }
     
     eraseButton.disabled = selectedCells.length < 2;
-    renderBoard(5);
+    renderBoard(8);
 }
 
 /** 消去ボタンイベントリスナー (Fの文字置き換えロジック修正済み) */
@@ -492,14 +601,30 @@ eraseButton.addEventListener('click', async () => {
     selectedCells = [];
     eraseButton.disabled = true;
     
-    renderBoard(5);
+    renderBoard(8);
     updateStatusDisplay();
     await checkGameStatus();
 });
 
 resetBtn.addEventListener('click', () => { 
-    // 盤面データはstartGame内でモードに応じて再取得される
-    startGame(isCountryMode, isCreationPlay); 
+    // リセットボタンを押したときは、現在出題中の問題でリセットする
+    if (isCreationPlay) {
+        // 制作モードのリセット
+        startGame(isCountryMode, true);
+    } else if (currentPuzzleIndex !== -1) {
+        // 標準問題のリセット
+        const problemList = isCountryMode ? initialBoardData_Country_List : initialBoardData_Capital_List;
+        const selectedPuzzle = problemList[currentPuzzleIndex];
+        
+        initialPlayData = JSON.parse(JSON.stringify(selectedPuzzle.data));
+        boardData = JSON.parse(JSON.stringify(selectedPuzzle.data));
+        selectedCells = [];
+        usedWords = [];
+        eraseButton.disabled = true;
+        
+        renderBoard(8);
+        updateStatusDisplay();
+    }
 });
 
 
@@ -575,7 +700,9 @@ btnInputComplete.addEventListener('click', () => {
     const modeSelect = document.getElementById('creation-mode-select');
     const isCountry = modeSelect.value === 'country';
 
-    // 制作モードのstartGameは、currentPlayerNicknameを制作者名として使用
+    // 制作モードでは、問題選択ロジックをスキップし、盤面データとisCreationフラグを渡す
+    initialPlayData = JSON.parse(JSON.stringify(newBoard));
+    boardData = JSON.parse(JSON.stringify(newBoard));
     startGame(isCountry, true); 
 });
 
@@ -626,7 +753,7 @@ document.getElementById('btn-capital-mode').addEventListener('click', () => {
     startGame(false, false); // isCountry=false, isCreation=false
 });
 document.getElementById('btn-create-mode').addEventListener('click', () => {
-    // ゲストユーザーは問題制作モードを利用できないようにする
+    // ゲストユーザーは制作モードを利用できない
     if (currentPlayerNickname === 'ゲスト') {
         alert("問題制作モードを利用するには、ニックネームとパスコードを設定してログインしてください。");
         promptForNickname(true);
