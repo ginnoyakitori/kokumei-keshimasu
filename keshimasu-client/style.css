@@ -1,400 +1,264 @@
-/* keshimasu-client/style.css - 豪華版 */
-
-/* --- 1. グローバル設定とフォント --- */
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700&family=Noto+Sans+JP:wght@400;700&display=swap');
+/* =========================================================================
+   1. 基本設定とフォント (Base & Typography)
+   ========================================================================= */
 
 :root {
     /* カラーパレット */
-    --color-dark-bg: #1f1f2e;     /* メイン背景 (濃いネイビー/パープル) */
-    --color-med-bg: #282a36;      /* コンポーネント背景 (Dracula風) */
-    --color-light-text: #f8f8f2;  /* 基本テキスト */
-    --color-primary: #ffc700;     /* プライマリカラー (ゴールド/ネオンイエロー) */
-    --color-secondary: #ff79c6;   /* セカンダリカラー (ピンク) */
-    --color-accent: #6272a4;      /* アクセントカラー (青みがかったグレー) */
-    --color-danger: #ff5555;      /* 危険/エラーカラー (赤) */
-    --color-board-fill: #393a55;  /* ボードの文字色 */
-    --color-board-empty: #1a1a27; /* 空セルの色 */
-
-    /* シャドウ設定 */
-    --shadow-deep: 0 8px 15px rgba(0, 0, 0, 0.4);
-    --shadow-neon: 0 0 5px var(--color-primary), 0 0 10px var(--color-primary);
+    --color-parchment: #FAF0E6; /* 淡いベージュ (背景紙) */
+    --color-sepia: #B88C64;     /* 古地図のセピア (メイン) */
+    --color-dark-sepia: #8A6B4D; /* 濃いセピア (ボーダー/シャドウ) */
+    --color-deep-blue: #004488; /* 海図のディープブルー (アクセント) */
+    --color-gold: #FFD700;      /* コンパスのゴールド (ハイライト) */
+    --color-text: #333333;      /* 標準テキスト */
+    
+    /* フォント (サーバー環境に依存するため、一般的なフォントを設定) */
+    --font-primary: 'serif', 'sans-serif';
+    --font-title: 'Georgia', serif;
 }
 
 body {
-    font-family: 'Noto Sans JP', sans-serif;
-    background-color: var(--color-dark-bg);
-    color: var(--color-light-text);
+    background-color: var(--color-parchment);
+    color: var(--color-text);
+    font-family: var(--font-primary);
     margin: 0;
     padding: 0;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start; /* 上部に寄せる */
-    min-height: 100vh;
-    padding-top: 30px;
-    box-sizing: border-box;
+    line-height: 1.6;
+    /* 古地図の質感を出すためのテクスチャを薄く重ねる */
+    background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.05), rgba(255,255,255,.05) 1px, transparent 1px, transparent 5px);
 }
 
-#app-container {
-    width: 100%;
-    max-width: 600px;
+/* =========================================================================
+   2. コンテナとヘッダー (Container & Header)
+   ========================================================================= */
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
     padding: 20px;
 }
 
-h2 {
-    font-family: 'Montserrat', sans-serif;
-    color: var(--color-secondary);
+header {
+    background-color: var(--color-sepia);
+    color: white;
+    padding: 15px 0;
     text-align: center;
-    margin-bottom: 25px;
-    letter-spacing: 2px;
-    text-shadow: 0 0 5px rgba(255, 121, 198, 0.5);
+    border-bottom: 5px solid var(--color-dark-sepia);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
-h3 {
-    color: var(--color-primary);
-    text-shadow: 0 0 3px rgba(255, 199, 0, 0.5);
-    border-bottom: 2px solid var(--color-accent);
-    padding-bottom: 5px;
-    margin-bottom: 15px;
-}
-
-/* --- 2. タイトル --- */
-#app-title {
-    font-family: 'Montserrat', sans-serif;
+header h1 {
+    font-family: var(--font-title);
     font-size: 2.5em;
-    font-weight: 700;
-    text-align: center;
-    color: var(--color-primary);
-    text-shadow: var(--shadow-neon);
-    margin-bottom: 30px;
-    padding: 10px 0;
-    letter-spacing: 5px;
-    display: block; /* 常にスペースを確保 */
+    text-shadow: 2px 2px var(--color-dark-sepia);
+    letter-spacing: 2px;
 }
 
-/* --- 3. ボタンとフォーム要素のスタイル --- */
-button {
-    background-color: var(--color-accent);
-    color: var(--color-light-text);
-    border: none;
-    padding: 12px 20px;
-    margin: 5px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-weight: 700;
-    transition: background-color 0.2s, transform 0.1s, box-shadow 0.2s;
-    box-shadow: var(--shadow-deep);
-    text-transform: uppercase;
+/* =========================================================================
+   3. フォームとボタン (Forms & Buttons) - ログイン/登録画面
+   ========================================================================= */
+
+.auth-form-container {
+    max-width: 400px;
+    margin: 60px auto;
+    padding: 40px;
+    background-color: white;
+    border: 3px solid var(--color-dark-sepia);
+    box-shadow: 10px 10px 0 0 var(--color-sepia), 15px 15px 0 0 var(--color-dark-sepia); /* 立体的な古文書風シャドウ */
 }
 
-button:hover:not(:disabled) {
-    background-color: #788aae;
-    transform: translateY(-2px);
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
+.auth-form-container h2 {
+    color: var(--color-deep-blue);
+    border-bottom: 2px solid var(--color-sepia);
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+    font-family: var(--font-title);
 }
 
-button:active:not(:disabled) {
-    transform: translateY(0);
-    box-shadow: var(--shadow-deep);
-}
-
-button:disabled {
-    background-color: #4a4d62;
-    cursor: not-allowed;
-    opacity: 0.6;
-}
-
-.primary {
-    background-color: var(--color-primary);
-    color: var(--color-dark-bg);
-    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
-}
-
-.primary:hover:not(:disabled) {
-    background-color: #ffda66;
-}
-
-.secondary {
-    background-color: var(--color-secondary);
-    color: var(--color-dark-bg);
-}
-
-.secondary:hover:not(:disabled) {
-    background-color: #ff9ee6;
-}
-
-input[type="text"],
-input[type="password"] {
+input[type="text"], input[type="password"] {
     width: calc(100% - 20px);
-    padding: 12px 10px;
+    padding: 10px;
     margin-bottom: 15px;
-    border: 2px solid var(--color-accent);
-    border-radius: 6px;
-    background-color: var(--color-med-bg);
-    color: var(--color-light-text);
-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6);
-    transition: border-color 0.2s;
+    border: 2px solid var(--color-sepia);
+    background-color: #FFF;
+    font-size: 1em;
 }
 
-input[type="text"]:focus,
-input[type="password"]:focus {
-    border-color: var(--color-primary);
-    outline: none;
-}
-
-/* --- 4. 認証画面 (Auth Screen) --- */
-.auth-box {
-    background-color: var(--color-med-bg);
-    padding: 30px;
-    border-radius: 12px;
-    box-shadow: var(--shadow-deep);
-    border-left: 5px solid var(--color-primary);
-}
-
-.auth-box label {
+.btn {
     display: block;
-    margin-bottom: 5px;
-    font-weight: 700;
-    color: var(--color-secondary);
-}
-
-.auth-buttons {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 10px;
-    margin-bottom: 20px;
-}
-
-.auth-buttons button {
-    flex-grow: 1;
-    margin: 0 5px;
-}
-
-.guest-button {
     width: 100%;
-    background-color: #393a55;
-    color: var(--color-light-text);
-    margin-top: 15px;
-}
-
-/* --- 5. ホーム画面 (Home Screen) --- */
-.welcome-message {
-    text-align: center;
-    font-size: 1.1em;
-    margin-bottom: 30px;
-    color: var(--color-primary);
-}
-
-.mode-selection button {
-    width: calc(50% - 10px);
-    padding: 15px 10px;
-    display: inline-block;
-    vertical-align: top;
-    font-size: 1.1em;
-}
-
-.problem-count {
-    display: block;
-    font-size: 0.9em;
-    font-weight: 400;
-    margin-top: 5px;
-    color: var(--color-light-text);
-}
-
-.utility-buttons {
+    padding: 12px;
     margin-top: 20px;
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-}
-
-/* --- 6. ゲームボード (Main Game) --- */
-#game-info {
-    text-align: center;
-    margin-bottom: 20px;
-    background-color: var(--color-med-bg);
-    padding: 15px;
-    border-radius: 8px;
-    box-shadow: var(--shadow-deep);
-    border-bottom: 3px solid var(--color-secondary);
-}
-
-#problem-number-display {
-    font-size: 1.5em;
-    font-family: 'Montserrat', sans-serif;
-    color: var(--color-primary);
-    text-shadow: var(--shadow-neon);
-    margin-top: 5px;
-}
-
-#board, #create-board {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 2px;
-    background-color: var(--color-dark-bg);
-    border: 5px solid var(--color-accent);
-    border-radius: 10px;
-    padding: 5px;
-    box-shadow: var(--shadow-deep);
-    margin: 20px auto;
-}
-
-/* ゲーム盤のセル */
-.cell {
-    width: 100%;
-    aspect-ratio: 1 / 1; /* 正方形 */
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    background-color: var(--color-board-fill);
-    color: var(--color-light-text);
-    font-size: 1.5em;
-    font-weight: 700;
+    background-color: var(--color-deep-blue);
+    color: white;
+    border: none;
     cursor: pointer;
-    border-radius: 4px;
-    transition: background-color 0.1s, transform 0.1s;
-    box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.3);
-}
-
-.cell:hover:not(.empty) {
-    background-color: #4a4d62;
-}
-
-.cell.empty {
-    background-color: var(--color-board-empty);
-    cursor: default;
-}
-
-.cell.selected {
-    background-color: var(--color-primary);
-    color: var(--color-dark-bg);
-    transform: scale(1.05);
-    box-shadow: 0 0 8px var(--color-primary), inset 0 0 5px rgba(0, 0, 0, 0.4);
-}
-
-/* 状態表示 */
-#status-area {
-    background-color: var(--color-med-bg);
-    padding: 15px;
-    border-radius: 8px;
-    margin-top: 10px;
-    box-shadow: var(--shadow-deep);
-}
-
-#used-words-display {
     font-size: 1.1em;
-    color: var(--color-secondary);
-    font-weight: 700;
-}
-
-/* --- 7. 問題作成画面 (Create Screen) --- */
-#create-puzzle-screen .auth-box {
-    border-left: 5px solid var(--color-secondary);
-}
-
-.create-input {
-    width: 80%;
-    height: 80%;
-    text-align: center;
-    background: var(--color-board-fill);
-    color: var(--color-light-text);
-    border: 1px solid var(--color-accent);
-    font-size: 1.3em;
-    font-weight: 700;
-    text-transform: uppercase;
-    padding: 0;
-    margin: 0;
-    border-radius: 3px;
-}
-
-.create-cell {
-    width: 100%;
-    aspect-ratio: 1 / 1;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 3px;
-    background-color: var(--color-board-empty);
-    border-radius: 4px;
-}
-
-/* --- 8. ランキング画面 (Ranking Screen) --- */
-.ranking-tabs button {
-    background-color: var(--color-accent);
-    margin-right: 5px;
-    padding: 8px 15px;
-    text-transform: none;
-}
-
-.ranking-tabs button[data-type="total"] {
-    background-color: var(--color-primary);
-    color: var(--color-dark-bg);
-}
-
-.ranking-tabs button.active {
-    background-color: var(--color-secondary);
-    color: var(--color-dark-bg);
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-neon);
-}
-
-.ranking-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 20px;
-    background-color: var(--color-med-bg);
-    box-shadow: var(--shadow-deep);
-    border-radius: 8px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    transition: background-color 0.3s, box-shadow 0.3s;
+    /* 羅針盤のような円形のボーダー */
+    border-radius: 5px;
+    position: relative;
     overflow: hidden;
 }
 
-.ranking-table th, .ranking-table td {
-    padding: 12px;
-    text-align: left;
-    border-bottom: 1px solid #393a55;
-}
-
-.ranking-table th {
-    background-color: #393a55;
-    color: var(--color-primary);
-    font-weight: 700;
-    text-transform: uppercase;
-}
-
-.ranking-table tr:nth-child(even) {
-    background-color: #2b2d3c;
-}
-
-/* 1位強調 */
-.ranking-table tr:first-child td {
-    background-color: #4a4d62;
-    color: #ffd700; /* Gold */
-    font-weight: 900;
-    text-shadow: 0 0 5px rgba(255, 215, 0, 0.5);
-}
-
-/* --- 9. ワードリスト画面 --- */
-.word-list-tabs button.active {
-    background-color: var(--color-primary);
-    color: var(--color-dark-bg);
+.btn:hover {
+    background-color: #0055AA;
+    box-shadow: 0 5px var(--color-dark-sepia);
     transform: translateY(-2px);
 }
 
-#word-list-content {
-    margin-top: 20px;
+/* =========================================================================
+   4. パズルボード (Game Board)
+   ========================================================================= */
+
+.game-area {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 10px;
-    background-color: var(--color-med-bg);
-    border-radius: 8px;
-    box-shadow: var(--shadow-deep);
+    justify-content: center;
+    align-items: flex-start;
+    padding: 30px;
 }
 
-.word-item {
-    background-color: #393a55;
-    color: var(--color-light-text);
-    padding: 6px 10px;
-    border-radius: 4px;
-    font-size: 0.9em;
-    box-shadow: 1px 1px 3px rgba(0, 0, 0, 0.3);
+.board-container {
+    position: relative;
+    background-color: var(--color-parchment);
+    padding: 20px;
+    border: 5px solid var(--color-sepia);
+    box-shadow: 10px 10px 0 0 var(--color-dark-sepia);
+}
+
+/* 巻物風の装飾 */
+.board-container::before, .board-container::after {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 100%;
+    background-color: var(--color-sepia);
+    top: 0;
+}
+
+.board-container::before {
+    left: -25px;
+    border-radius: 10px 0 0 10px;
+}
+
+.board-container::after {
+    right: -25px;
+    border-radius: 0 10px 10px 0;
+}
+
+
+/* ボードのグリッド */
+.puzzle-board {
+    display: grid;
+    gap: 2px;
+}
+
+/* 文字パネルの基本デザイン (古い切手/石碑風) */
+.tile {
+    width: 50px;
+    height: 50px;
+    background-color: #FFFFFF;
+    border: 1px solid var(--color-sepia);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 1.5em;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    box-shadow: 2px 2px 0 var(--color-dark-sepia); /* 立体感 */
+}
+
+.tile:hover {
+    background-color: #FFFACD; /* 選択前のハイライト */
+}
+
+/* 選択されたパネル */
+.tile.selected {
+    background-color: var(--color-deep-blue);
+    color: var(--color-gold);
+    box-shadow: 0 0 10px var(--color-gold);
+    transform: scale(1.05);
+}
+
+/* 消去済みのパネル (古地図の色塗り) */
+.tile.cleared {
+    background-color: #A0BFC0; /* 成功時の淡い色 */
+    color: var(--color-dark-sepia);
+    cursor: default;
+    box-shadow: none;
+    opacity: 0.8;
+}
+
+/* =========================================================================
+   5. ランキング画面 (Ranking)
+   ========================================================================= */
+
+.ranking-container {
+    max-width: 800px;
+    margin: 40px auto;
+    background-color: white;
+    padding: 30px;
+    border: 4px double var(--color-deep-blue);
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+}
+
+.ranking-container h2 {
+    text-align: center;
+    font-family: var(--font-title);
+    font-size: 2em;
+    color: var(--color-deep-blue);
+    border-bottom: 3px solid var(--color-gold);
+    padding-bottom: 10px;
+}
+
+.ranking-list {
+    list-style: none;
+    padding: 0;
+}
+
+.ranking-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 20px;
+    margin-bottom: 8px;
+    border-radius: 5px;
+    background-color: var(--color-parchment);
+    font-size: 1.1em;
+    border-left: 5px solid var(--color-sepia);
+    transition: background-color 0.3s;
+}
+
+.ranking-item:nth-child(even) {
+    background-color: #FFF;
+}
+
+/* トップ3のハイライト (コンパスのゴールドと深いブルー) */
+.ranking-item:nth-child(1) {
+    background-color: var(--color-gold);
+    color: var(--color-deep-blue);
+    font-weight: bold;
+    border-left-color: var(--color-deep-blue);
+    box-shadow: 0 0 15px rgba(255, 215, 0, 0.7);
+    font-size: 1.2em;
+}
+
+.ranking-item:nth-child(2) {
+    background-color: silver;
+}
+
+.ranking-item:nth-child(3) {
+    background-color: #CD7F32; /* ブロンズ */
+}
+
+.rank-number {
+    font-weight: bold;
+    min-width: 30px;
+    text-align: right;
+}
+
+.rank-score {
+    font-weight: bold;
+    color: var(--color-deep-blue);
 }
