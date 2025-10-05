@@ -2,9 +2,9 @@
 // PostgreSQLのテーブルを初期化するためのスクリプト
 
 const db = require('./db');
-// 🚨 (デバッグのため、これらのファイルは一時的にロードされません)
-// const COUNTRY_PUZZLES = require('./data/country_puzzles.json');
-// const CAPITAL_PUZZLES = require('./data/capital_puzzles.json');
+// 初期パズルのデータ構造が { id: 1, data: [...], creator: "..." } であることを前提とする
+const COUNTRY_PUZZLES = require('./data/country_puzzles.json');
+const CAPITAL_PUZZLES = require('./data/capital_puzzles.json');
 
 /**
  * データベースを初期化し、必要なテーブルを作成する。
@@ -44,23 +44,32 @@ async function initializeDatabase() {
 
         if (puzzleCount === 0) {
             console.log('ℹ️ Initializing puzzles...');
-            
-            // ★★★ デバッグ用修正：安全なテストデータに置き換え ★★★
-            const safePuzzles = [
-                // 最小限の有効なJSON配列データを挿入
-                { mode: 'country', board_data: [['A']], creator: 'DEBUG_TEST' },
-                { mode: 'capital', board_data: [['B']], creator: 'DEBUG_TEST' }
-            ];
-            // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
 
-            for (const puzzle of safePuzzles) {
-                // board_data は JSONB 型に格納するため、オブジェクトのまま渡す
+            // DBの列名 'board_data' にパズルデータの 'data' を正しくマッピングする
+            const countryPuzzles = COUNTRY_PUZZLES.map(p => ({ 
+                mode: 'country', 
+                board_data: p.data, 
+                creator: p.creator 
+            }));
+            const capitalPuzzles = CAPITAL_PUZZLES.map(p => ({ 
+                mode: 'capital', 
+                board_data: p.data, 
+                creator: p.creator 
+            }));
+
+            const allInitialPuzzles = [...countryPuzzles, ...capitalPuzzles];
+            
+            for (const puzzle of allInitialPuzzles) {
+                // ★★★ 最終修正箇所: JSON.stringify() で明示的に文字列化する ★★★
+                // これにより、Node.jsの自動変換エラーを回避し、PostgreSQLに有効なJSON文字列を渡す
+                const jsonBoardData = JSON.stringify(puzzle.board_data);
+
                 await db.query(
                     'INSERT INTO puzzles (mode, board_data, creator) VALUES ($1, $2, $3)',
-                    [puzzle.mode, puzzle.board_data, puzzle.creator]
+                    [puzzle.mode, jsonBoardData, puzzle.creator]
                 );
             }
-            console.log(`✅ ${safePuzzles.length} initial puzzles inserted (DEBUG).`);
+            console.log(`✅ ${allInitialPuzzles.length} initial puzzles inserted.`);
         } else {
             console.log(`ℹ️ Puzzles already exist (${puzzleCount} total). Skipping initial insertion.`);
         }
