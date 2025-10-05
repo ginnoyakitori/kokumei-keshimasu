@@ -542,3 +542,112 @@ h2 {
     margin-top: 10px;
 }
 
+/* =========================================================================
+   2. 認証画面 (ログイン/新規登録) - 縦配置・文字拡大版
+   ========================================================================= */
+
+/* 認証フォームのコンテナ - パディングを増やし、存在感を出す */
+.auth-form {
+    background-color: var(--color-tertiary); 
+    padding: 40px 30px; 
+    border-radius: 10px;
+    width: 90%;
+    max-width: 380px;
+    text-align: center;
+    border: 2px solid var(--color-border);
+    /* ゴールドのネオンとシャドウ */
+    box-shadow: 
+        0 0 15px rgba(255, 215, 0, 0.4), 
+        0 0 0 5px #444; 
+    margin: 30px auto 35px auto;
+}
+
+.auth-form h2 {
+    color: var(--color-accent);
+    font-size: 2.2em; /* タイトルをさらに拡大 */
+    font-weight: 900;
+    margin-bottom: 35px; /* 下のマージンを増やす */
+    padding-bottom: 15px;
+    border-bottom: 3px solid var(--color-accent); /* 線を太く */
+    text-shadow: 0 0 8px rgba(255, 215, 0, 0.7);
+}
+
+/* --- 入力フィールド --- */
+.auth-form input[type="text"], 
+.auth-form input[type="password"] {
+    width: calc(100% - 30px);
+    padding: 20px; /* パディングを増やし、入力ボックスを非常に大きくする */
+    margin-bottom: 25px; /* 要素間の隙間を増やす */
+    border: 2px solid var(--color-accent); /* 枠線を太く */
+    background-color: var(--color-primary); 
+    color: var(--color-text-light);
+    font-size: 1.3em; /* 文字を拡大 */
+    border-radius: 8px; /* 角を丸く */
+    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.8);
+    text-align: center;
+}
+
+/* --- 認証ボタンのグループ (ログイン/新規登録) --- */
+.auth-button-group {
+    display: flex;
+    flex-direction: column; /* 縦に並べる */
+    gap: 15px; /* ボタン間の隙間 */
+    width: 100%;
+    margin-top: 15px;
+}
+
+/* ログインボタン (プライマリ) */
+.auth-btn {
+    width: 100%;
+    padding: 18px; /* ボタンのパディングを増やし、タッチしやすく */
+    background: linear-gradient(145deg, var(--color-accent), #c0a800); /* ゴールド */
+    color: var(--color-primary); 
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 1.5em; /* 文字を大きく */
+    font-weight: bold;
+    letter-spacing: 1px;
+    box-shadow: 0 6px 0 #a08800; /* 影を深く */
+    transition: all 0.1s;
+}
+
+.auth-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 7px 0 #a08800;
+}
+
+.auth-btn:active {
+    transform: translateY(5px); 
+    box-shadow: 0 1px 0 #a08800;
+}
+
+/* 新規登録ボタン (セカンダリとして少し抑える) */
+.auth-btn.signup-btn {
+    background: linear-gradient(145deg, #5c5c5c, #404040); /* グレーのグラデーション */
+    color: #ccc;
+    box-shadow: 0 4px 0 #333;
+    font-size: 1.2em; /* ログインより少し小さく */
+    padding: 15px;
+}
+.auth-btn.signup-btn:active {
+    box-shadow: 0 1px 0 #333;
+}
+
+
+/* --- ゲストプレイリンク --- */
+.switch-link {
+    display: block; /* 縦に配置するためブロック要素にする */
+    background-color: transparent;
+    border: none;
+    color: #aaa; /* 目立たない色に調整 */
+    text-decoration: underline;
+    font-size: 1.1em; /* 大きく */
+    margin-top: 30px; /* 上部に大きな隙間 */
+    cursor: pointer;
+    padding: 10px;
+    text-shadow: none; /* ネオン効果は削除 */
+}
+.switch-link:hover {
+    color: var(--color-text-light);
+}

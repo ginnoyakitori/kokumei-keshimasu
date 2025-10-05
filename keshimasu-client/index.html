@@ -11,21 +11,23 @@
         <h1 id="app-title">国名・首都名ケシマス</h1>
 
         <section id="auth-screen" style="display: block;">
-    <h2>国名ケシマス</h2>
-    <div class="auth-box">
-        <label for="input-nickname">ニックネーム (10文字まで):</label>
-        <input type="text" id="input-nickname" maxlength="10" required>
+    <div id="login-screen" class="auth-screen screen">
+    <div class="auth-form">
+        <h2>国名ケシマス</h2>
         
-        <label for="input-passcode">パスコード (認証用):</label>
-        <input type="password" id="input-passcode" required>
+        <input type="text" id="nickname-input" placeholder="ニックネーム (10文字まで)" maxlength="10">
+        
+        <input type="password" id="passcode-input" placeholder="パスコード (認証用)">
 
-        <div class="auth-buttons">
-            <button id="btn-login-submit" class="auth-button primary">ログイン</button>
-            <button id="btn-register-submit" class="auth-button secondary">新規登録</button>
+        <div class="auth-button-group">
+            <button id="login-btn" class="auth-btn login-btn">ログイン</button>
+            <button id="signup-btn" class="auth-btn signup-btn secondary-btn">新規登録</button>
         </div>
-
-        <button id="btn-play-as-guest" class="guest-button">ゲストとしてプレイ (スコア非保存)</button>
+        
+        <button id="guest-play-btn" class="switch-link">ゲストとしてプレイ (スコア非保存)</button>
     </div>
+</div>
+
 </section>
         <div id="home-screen" class="screen" style="display:none;">
             
