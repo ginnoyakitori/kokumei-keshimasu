@@ -330,8 +330,8 @@ function updateHomeProblemCount() {
     const clearedCountryCount = getClearedPuzzles('country').length;
     const clearedCapitalCount = getClearedPuzzles('capital').length;
 
-    document.getElementById('country-problem-count').textContent = `問題数: ${countryCount}問 (済: ${clearedCountryCount})`;
-    document.getElementById('capital-problem-count').textContent = `問題数: ${capitalCount}問 (済: ${clearedCapitalCount})`;
+    document.getElementById('country-problem-count').textContent = `問題数: ${countryCount}問 `;
+    document.getElementById('capital-problem-count').textContent = `問題数: ${capitalCount}問 `;
 }
 
 /**
