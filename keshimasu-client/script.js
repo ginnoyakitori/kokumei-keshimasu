@@ -341,7 +341,11 @@ function updateHomeProblemCount() {
  */
 function startGame(isCountry, isCreation) {
     const mode = isCountry ? 'country' : 'capital';
-    const problemList = allPuzzles[mode]; 
+    let problemList = allPuzzles[mode]; // const から let に変更
+
+    // ★★★ 修正: 問題リストをIDの昇順でソートし、出題順を固定する ★★★
+    // 常にIDが小さいもの（古い問題）から順に出題されるようにする
+    problemList.sort((a, b) => a.id - b.id);
     
     // 制作モードではない場合のみ、問題選択ロジックを実行
     if (!isCreation) {
@@ -356,6 +360,7 @@ function startGame(isCountry, isCreation) {
             return;
         }
 
+        // ソートされているため、[0]番目が最も古い未クリア問題
         const selectedPuzzle = availablePuzzles[0];
         
         currentPuzzleIndex = problemList.findIndex(p => p.id === selectedPuzzle.id);
@@ -498,7 +503,7 @@ async function checkGameStatus() {
         
         if (!isCreationPlay) {
             // 標準問題のクリア処理
-            const problemList = allPuzzles[mode];
+            const problemList = isCountryMode ? allPuzzles.country : allPuzzles.capital;
             const currentPuzzle = problemList[currentPuzzleIndex];
             
             if (currentPuzzle && currentPuzzle.id) {
@@ -601,7 +606,7 @@ function handleCellClick(event) {
     }
     
     eraseButton.disabled = selectedCells.length < 2;
-    // ★★★ 修正: ここで盤面を再描画することで、クリック直後のハイライトを確実に表示 ★★★
+    // クリック直後にハイライトを反映させるため再描画
     renderBoard(5); 
 }
 
