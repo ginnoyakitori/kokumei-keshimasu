@@ -52,12 +52,14 @@ const createBoardElement = document.getElementById('create-board');
 const btnInputComplete = document.getElementById('btn-input-complete');
 const resetBtn = document.getElementById('reset-button');
 
-// 認証フォーム要素
-const inputNickname = document.getElementById('input-nickname');
-const inputPasscode = document.getElementById('input-passcode');
-// 修正: ログインと新規登録ボタンを個別に取得
-const btnLoginSubmit = document.getElementById('btn-login-submit'); 
-const btnRegisterSubmit = document.getElementById('btn-register-submit');
+// 認証フォーム要素 (★修正: HTMLのIDに合わせて変更)
+const inputNickname = document.getElementById('nickname-input');
+const inputPasscode = document.getElementById('passcode-input');
+
+// 修正: ログインと新規登録、ゲストプレイボタンを個別に取得
+const btnLoginSubmit = document.getElementById('login-btn'); 
+const btnRegisterSubmit = document.getElementById('signup-btn');
+const btnGuestPlay = document.getElementById('guest-play-btn'); // ★追加
 const welcomeMessage = document.getElementById('welcome-message');
 
 // ワードリスト要素
@@ -853,28 +855,37 @@ function displayWordList(type) {
 // --- 6. イベントリスナーの設定 ---
 
 // 認証画面リスナー
-btnLoginSubmit.addEventListener('click', () => {
-    attemptLogin(inputNickname.value, inputPasscode.value);
-});
-btnRegisterSubmit.addEventListener('click', () => {
-    attemptRegister(inputNickname.value, inputPasscode.value);
-});
-inputPasscode.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-        // Enterキーでログインを試行
+// ★修正: nullチェックを追加
+if (btnLoginSubmit) {
+    btnLoginSubmit.addEventListener('click', () => {
         attemptLogin(inputNickname.value, inputPasscode.value);
-    }
-});
-document.getElementById('btn-play-as-guest').addEventListener('click', async () => {
-    currentPlayerNickname = "ゲスト";
-    currentPlayerId = null;
-    // ゲストの場合、ローカルストレージの認証情報をクリア
-    localStorage.removeItem('player_id');
-    localStorage.removeItem('keshimasu_nickname');
-    alert("ゲストとしてゲームを開始します。スコアは保存されません。");
-    
-    showScreen('home');
-});
+    });
+}
+if (btnRegisterSubmit) {
+    btnRegisterSubmit.addEventListener('click', () => {
+        attemptRegister(inputNickname.value, inputPasscode.value);
+    });
+}
+if (inputPasscode) {
+    inputPasscode.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            // Enterキーでログインを試行
+            attemptLogin(inputNickname.value, inputPasscode.value);
+        }
+    });
+}
+if (btnGuestPlay) { // ★修正: 新しい変数名を使用
+    btnGuestPlay.addEventListener('click', async () => {
+        currentPlayerNickname = "ゲスト";
+        currentPlayerId = null;
+        // ゲストの場合、ローカルストレージの認証情報をクリア
+        localStorage.removeItem('player_id');
+        localStorage.removeItem('keshimasu_nickname');
+        alert("ゲストとしてゲームを開始します。スコアは保存されません。");
+        
+        showScreen('home');
+    });
+}
 document.getElementById('btn-logout').addEventListener('click', () => {
     currentPlayerNickname = null;
     currentPlayerId = null;
