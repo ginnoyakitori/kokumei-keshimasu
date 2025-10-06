@@ -52,14 +52,14 @@ const createBoardElement = document.getElementById('create-board');
 const btnInputComplete = document.getElementById('btn-input-complete');
 const resetBtn = document.getElementById('reset-button');
 
-// 認証フォーム要素 (★修正: HTMLのIDに合わせて変更)
+// 認証フォーム要素 (HTMLのIDに合わせて修正済み)
 const inputNickname = document.getElementById('nickname-input');
 const inputPasscode = document.getElementById('passcode-input');
 
-// 修正: ログインと新規登録、ゲストプレイボタンを個別に取得
+// ログイン/新規登録、ゲストプレイボタン (HTMLのIDに合わせて修正済み)
 const btnLoginSubmit = document.getElementById('login-btn'); 
 const btnRegisterSubmit = document.getElementById('signup-btn');
-const btnGuestPlay = document.getElementById('guest-play-btn'); // ★追加
+const btnGuestPlay = document.getElementById('guest-play-btn'); 
 const welcomeMessage = document.getElementById('welcome-message');
 
 // ワードリスト要素
@@ -363,7 +363,7 @@ function startGame(isCountry, isCreation) {
         initialPlayData = JSON.parse(JSON.stringify(selectedPuzzle.data));
         boardData = JSON.parse(JSON.stringify(selectedPuzzle.data));
         
-        // ★問題番号の修正: 表示される問題番号をローカルのクリア数に同期★
+        // 問題番号の修正: 表示される問題番号をローカルのクリア数に同期
         const nextProblemNumber = clearedIds.length + 1;
         document.getElementById('problem-number-display').textContent = `第 ${nextProblemNumber} 問`;
         
@@ -413,9 +413,11 @@ function renderBoard(visibleRows) {
             if (char === '') {
                 cell.classList.add('empty');
             } else {
+                // セルのクリックイベントを登録
                 cell.addEventListener('click', handleCellClick);
             }
 
+            // 'selectedCells' に含まれていれば 'selected' クラスを付与してハイライト
             const isSelected = selectedCells.some(coord => coord[0] === r && coord[1] === c);
             if (isSelected) {
                 cell.classList.add('selected');
@@ -599,6 +601,7 @@ function handleCellClick(event) {
     }
     
     eraseButton.disabled = selectedCells.length < 2;
+    // ★★★ 修正: ここで盤面を再描画することで、クリック直後のハイライトを確実に表示 ★★★
     renderBoard(5); 
 }
 
@@ -854,8 +857,7 @@ function displayWordList(type) {
 
 // --- 6. イベントリスナーの設定 ---
 
-// 認証画面リスナー
-// ★修正: nullチェックを追加
+// 認証画面リスナー (nullチェック追加済み)
 if (btnLoginSubmit) {
     btnLoginSubmit.addEventListener('click', () => {
         attemptLogin(inputNickname.value, inputPasscode.value);
@@ -874,7 +876,7 @@ if (inputPasscode) {
         }
     });
 }
-if (btnGuestPlay) { // ★修正: 新しい変数名を使用
+if (btnGuestPlay) { 
     btnGuestPlay.addEventListener('click', async () => {
         currentPlayerNickname = "ゲスト";
         currentPlayerId = null;
