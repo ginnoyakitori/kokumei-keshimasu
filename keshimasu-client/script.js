@@ -84,6 +84,7 @@ function getClearedPuzzles(mode) {
 
 /**
  * LocalStorageにクリアした問題のIDを記録する
+ * (ログインユーザーの場合は、これは主にサーバー同期前の安全策として使用される)
  */
 function markPuzzleAsCleared(mode, puzzleId) {
     const key = `cleared_puzzles_${mode}_id_${currentPlayerId || 'guest'}`;
@@ -147,6 +148,8 @@ async function loadPuzzlesAndWords() {
  * プレイヤーIDから最新のステータスを取得する
  */
 async function getPlayerStatus(id) {
+    if (!id) return false;
+    
     try {
         const response = await fetch(`${API_BASE_URL}/player/${id}`);
         
@@ -165,7 +168,7 @@ async function getPlayerStatus(id) {
         playerStats.country_clears = player.country_clears;
         playerStats.capital_clears = player.capital_clears;
         
-        // ★修正: (サーバー側でクリア済みIDリストが返されている場合) LocalStorageをサーバーデータで上書き ★
+        // ★修正: LocalStorageをサーバーデータで上書き ★
         // サーバー側で cleared_country_ids が返されるようになったため、ここで同期する
         if (player.cleared_country_ids) {
             const countryKey = `cleared_puzzles_country_id_${id}`;
@@ -294,8 +297,14 @@ async function attemptRegister(nickname, passcode) {
 async function setupPlayer() {
     currentPlayerId = localStorage.getItem('player_id');
     currentPlayerNickname = localStorage.getItem('keshimasu_nickname');
+    
+    // ゲストの場合の初期値設定
+    if (currentPlayerNickname === 'ゲスト' || !currentPlayerNickname) {
+        playerStats.country_clears = getClearedPuzzles('country').length;
+        playerStats.capital_clears = getClearedPuzzles('capital').length;
+    }
 
-    if (currentPlayerId && currentPlayerNickname) {
+    if (currentPlayerId && currentPlayerNickname && currentPlayerNickname !== 'ゲスト') {
         const success = await getPlayerStatus(currentPlayerId);
         
         if (success) {
@@ -515,9 +524,9 @@ async function submitNewPuzzle(mode, boardData, creator) {
 }
 
 /**
- * ゲームクリア時にスコア更新、通知、画面更新を行う
- * ★★★ 修正のコア部分 ★★★
- */
+ * ゲームクリア時にスコア更新、通知、画面更新を行う
+ * ★★★ 修正のコア部分 ★★★
+ */
 async function checkGameStatus() { 
     const totalChars = boardData.flat().filter(char => char !== '').length;
     
@@ -527,13 +536,20 @@ async function checkGameStatus() {
         
         if (!isCreationPlay) {
             const problemDataList = allPuzzles[mode].puzzles || [];
-            const currentPuzzle = problemDataList.find(p => p.data === initialPlayData); // 初期データからパズルを特定
+            // initialPlayData (解答前の盤面)からパズルIDを特定する
+            const currentPuzzle = problemDataList.find(p => JSON.stringify(p.data) === JSON.stringify(initialPlayData)); 
 
             if (currentPuzzle && currentPuzzle.id) {
-                markPuzzleAsCleared(mode, currentPuzzle.id); 
+                markPuzzleAsCleared(mode, currentPuzzle.id); // ゲストモード用のローカル保存
                 
                 // 1. スコア更新を待ち、playerStatsを最新値にする
-                await updatePlayerScore(mode, currentPuzzle.id); 
+                // ゲスト/未ログインの場合は、ローカルのクリア数を更新する
+                if (currentPlayerId) {
+                    await updatePlayerScore(mode, currentPuzzle.id); 
+                } else {
+                    // ゲストモードの場合、ローカルでスコアをインクリメント
+                    playerStats[mode + '_clears']++; 
+                }
             }
 
             // 2. 通知に最新のスコア (playerStats[mode + '_clears']) を反映
@@ -899,8 +915,10 @@ if (btnGuestPlay) {
         currentPlayerId = null;
         localStorage.removeItem('player_id');
         localStorage.removeItem('keshimasu_nickname');
-        playerStats.country_clears = getClearedPuzzles('country').length; // ゲストのローカルスコアを反映
-        playerStats.capital_clears = getClearedPuzzles('capital').length; // ゲストのローカルスコアを反映
+        
+        // ★修正: ゲストモード開始時にローカルのクリア数をplayerStatsに反映★
+        playerStats.country_clears = getClearedPuzzles('country').length; 
+        playerStats.capital_clears = getClearedPuzzles('capital').length; 
         
         alert("ゲストとしてゲームを開始します。スコアはランキングに保存されません。");
         await loadPuzzlesAndWords(); // 問題数更新のため
