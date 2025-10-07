@@ -739,7 +739,7 @@ h2 {
     /* ボタン群を縦に積み重ねるなど、レイアウトを調整 */
     .controls {
         flex-direction: column;
-        gap: 8px;
+        gap: 3px;
     }
     
     .status-display {
