@@ -38,7 +38,6 @@ body {
     max-width: 500px;
     text-align: center;
     border: 1px solid #444;
-     box-sizing: border-box;
 }
 
 /* メインタイトル: JSで表示/非表示を制御 (ホーム画面以外で非表示) */
@@ -399,7 +398,7 @@ h2 {
     text-align: center;
     background-color: #333;
     color: var(--color-accent); 
-    font-size: 1.8em;
+    font-size: 1.2em;
     font-weight: 900;
     border: none;
     outline: none;
@@ -716,31 +715,31 @@ h2 {
 
     /* ★★★ 盤面の幅を100%に設定 ★★★ */
     #board, .create-grid { 
-        width: 95%;
+        width: 100%;
         max-width: 100%; 
         
         /* 5列に均等に分割し、幅いっぱいに広がるようにする */
         grid-template-columns: repeat(5, 1fr); 
-        gap: 0px;
+        gap: 2px;
         margin: 10px auto; 
     }
 
     /* セルは親（グリッド）の幅に対して相対的なサイズになるため、固定サイズを解除 */
     .cell, .create-cell {
         aspect-ratio: 1 / 1; 
-        font-size: 15vw; /* 画面幅の4%をフォントサイズに利用 */
+        font-size: 4vw; /* 画面幅の4%をフォントサイズに利用 */
         font-weight: 900;
     }
 
     /* 制作モードの入力欄も調整 */
     .create-input {
-        font-size: 23px;
+        font-size: 4vw;
     }
 
     /* ボタン群を縦に積み重ねるなど、レイアウトを調整 */
     .controls {
         flex-direction: column;
-        gap: 3px;
+        gap: 8px;
     }
     
     .status-display {
