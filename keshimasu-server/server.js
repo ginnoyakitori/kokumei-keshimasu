@@ -206,7 +206,8 @@ const CAPITAL_WORDS = require('./data/capital_words.json');
     /**
      * GET /api/puzzles/:mode
      * 指定されたモードの問題リストを取得する (古い登録順)
-     * クエリパラメータ: ?playerId=... を受け入れ、クリア済み問題を除外する
+     * ★修正: レスポンスに全問題、クリア済みIDリスト、およびプレイヤー特定フラグを含める★
+     * クライアント側でクリア済みIDを参照してフィルタリングする責務を持つ
      */
     app.get('/api/puzzles/:mode', async (req, res) => {
         const { mode } = req.params;
@@ -217,8 +218,7 @@ const CAPITAL_WORDS = require('./data/capital_words.json');
         }
         
         let clearedIds = [];
-        const queryParams = [mode]; // $1: mode
-        let whereClause = 'WHERE mode = $1';
+        let playerIdentified = false; // プレイヤーが特定できたかを示すフラグ
         
         // 1. プレイヤーIDがあれば、クリア済みIDを取得
         if (playerId) {
@@ -233,28 +233,29 @@ const CAPITAL_WORDS = require('./data/capital_words.json');
                     const clearedIdsJson = playerResult.rows[0][clearedIdsColumn];
                     // JSON文字列をパースし、IDリスト（数値配列）を作成
                     clearedIds = clearedIdsJson ? JSON.parse(clearedIdsJson) : [];
-                    
-                    // clearedIdsが空でなければ、クエリパラメータに追加し、WHERE句を構築
-                    if (clearedIds.length > 0) {
-                        // clearedIdsをPostgreSQLの配列としてバインド 
-                        queryParams.push(clearedIds); // $2: clearedIds
-                        // IDがクリア済みリスト（$2）のいずれとも一致しないことを確認 (NOT IN ARRAY)
-                        whereClause += ` AND id <> ALL($2)`; 
-                    }
+                    playerIdentified = true; // プレイヤー特定成功
                 }
             } catch (err) {
                 console.error('クリア済みID取得エラー:', err.message);
-                // エラーがあっても問題リストの取得は続行（クリア済みフィルタなし）
+                // エラーが発生した場合も、問題リストの取得は続行（clearedIdsは[]のまま）
             }
         }
 
-        // 2. SQLクエリを構築して実行
+        // 2. 問題リスト全体を取得 (フィルタリングはクライアントに任せるため、ここでは全ての対象問題を取得)
         try {
-            const sql = `SELECT id, board_data AS data, creator FROM puzzles ${whereClause} ORDER BY created_at ASC`;
+            // modeに一致する全ての問題を取得する
+            const sql = 'SELECT id, board_data AS data, creator FROM puzzles WHERE mode = $1 ORDER BY created_at ASC';
             
-            const result = await db.query(sql, queryParams);
+            const result = await db.query(sql, [mode]);
             
-            res.json(result.rows);
+            // 3. レスポンスにすべての情報を含めて返す
+            res.json({ 
+                puzzles: result.rows, 
+                cleared_ids: clearedIds,
+                player_identified: playerIdentified, // フラグをクライアントに返す
+                message: playerIdentified ? '問題リストと最新のクリア済みIDを返却しました。' : 'ゲスト/未ログイン用の全問題リストを返却しました。'
+            });
+
         } catch (err) {
             console.error('問題リスト取得エラー:', err.message);
             res.status(500).json({ message: 'サーバーエラーにより問題を取得できませんでした。' });
