@@ -1,308 +1,261 @@
-// keshimasu-server/server.js
-require('dotenv').config(); // .envファイルをロード
+// ----------------------------------------------------
+// server.js（国名ケシマス 完全動作版）
+// ----------------------------------------------------
 const express = require('express');
 const cors = require('cors');
+const bcrypt = require('bcryptjs');
 const path = require('path');
-const db = require('./db'); // データベース接続設定
-const initializeDatabase = require('./init_db'); // DB初期化スクリプト
-const { hashPasscode, comparePasscode } = require('./utils/auth'); // 認証ヘルパー
+const db = require('./db');
+const { hashPasscode, comparePasscode } = require('./utils/auth');
 
 const app = express();
-// ★★★ 修正箇所: 環境変数PORTを使用する (Renderの推奨対応) ★★★
+app.use(cors());
+app.use(express.json());
+app.use(express.static(path.join(__dirname, '../public')));
+
 const PORT = process.env.PORT || 3000;
 
-// 辞書データを読み込む
-const COUNTRY_WORDS = require('./data/country_words.json');
-const CAPITAL_WORDS = require('./data/capital_words.json');
+// ----------------------------------------------------
+// ✅ 1. プレイヤー登録 API
+// ----------------------------------------------------
+app.post('/api/signup', async (req, res) => {
+    const { nickname, passcode } = req.body;
 
+    if (!nickname || !passcode) {
+        return res.status(400).json({ message: 'ニックネームとパスコードは必須です。' });
+    }
 
-// --- 初期化と起動 ---
-(async () => {
-    // データベースの初期化（テーブル作成など）をサーバー起動前に実行
-    await initializeDatabase(); 
-    
-    // CORS設定
-    app.use(cors());
-    // JSONリクエストボディの解析を有効化
-    app.use(express.json());
-    
-    // 静的ファイル配信 (keshimasu-clientディレクトリを想定)
-    app.use(express.static(path.join(__dirname, '..', 'keshimasu-client')));
-
-
-    // --- API エンドポイント ---
-
-    /**
-     * POST /api/player/register
-     * ニックネームとパスコードでログインまたは新規登録を行う
-     * サーバーは既存/新規を判定し、isNewUserフラグを正確に返す
-     */
-    app.post('/api/player/register', async (req, res) => {
-        const { nickname, passcode } = req.body;
-        const trimmedNickname = nickname ? nickname.trim().slice(0, 10) : null;
-        
-        if (!trimmedNickname || !passcode) {
-            return res.status(400).json({ message: 'ニックネームとパスコードは必須です。' });
-        }
-
-        try {
-            // 1. 既存ユーザーのチェック
-            const existingPlayer = await db.query(
-                // ★修正1-1: ログイン時にクリア済みIDリストを取得に含める★
-                'SELECT id, nickname, passcode_hash, country_clears, capital_clears, cleared_country_ids, cleared_capital_ids FROM players WHERE nickname = $1',
-                [trimmedNickname]
-            );
-
-            if (existingPlayer.rows.length > 0) {
-                // ログイン処理 (既存ユーザー)
-                const player = existingPlayer.rows[0];
-                const match = await comparePasscode(passcode, player.passcode_hash);
-
-                if (match) {
-                    // ★ログイン成功
-                    return res.json({ 
-                        player: { 
-                            id: player.id, 
-                            nickname: player.nickname,
-                            country_clears: player.country_clears,
-                            capital_clears: player.capital_clears,
-                            // ★修正1-2: クリア済みIDを返す★
-                            cleared_country_ids: player.cleared_country_ids || [],
-                            cleared_capital_ids: player.cleared_capital_ids || []
-                        },
-                        isNewUser: false 
-                    });
-                } else {
-                    // パスコード不一致
-                    return res.status(401).json({ message: 'パスコードが一致しません。', isNewUser: false });
-                }
-            } else {
-                // 新規登録処理 (新規ユーザー)
-                const hashedPasscode = await hashPasscode(passcode);
-                const newPlayer = await db.query(
-                    'INSERT INTO players (nickname, passcode_hash) VALUES ($1, $2) RETURNING id, nickname, country_clears, capital_clears',
-                    [trimmedNickname, hashedPasscode]
-                );
-
-                const player = newPlayer.rows[0];
-                // ★新規登録成功
-                return res.status(201).json({ 
-                    player: { 
-                        id: player.id, 
-                        nickname: player.nickname,
-                        country_clears: player.country_clears,
-                        capital_clears: player.capital_clears
-                        // cleared_ids は空の配列として扱われるため、ここでは特に返さない
-                    },
-                    isNewUser: true 
-                });
-            }
-
-        } catch (err) {
-            console.error('認証/登録エラー:', err.message);
-            // サーバーエラー
-            res.status(500).json({ message: 'サーバーエラーが発生しました。' });
-        }
-    });
-    
-    /**
-     * GET /api/player/:id
-     * プレイヤーの最新情報を取得（リロード時など）
-     */
-    app.get('/api/player/:id', async (req, res) => {
-        try {
-            const result = await db.query(
-                // ★修正2: プレイヤー情報取得時にクリア済みIDリストを含める★
-                'SELECT id, nickname, country_clears, capital_clears, cleared_country_ids, cleared_capital_ids FROM players WHERE id = $1',
-                [req.params.id]
-            );
-
-            if (result.rows.length === 0) {
-                return res.status(404).json({ message: 'プレイヤーが見つかりません。' });
-            }
-            // nullの場合は空の配列を返すようにする
-            const player = result.rows[0];
-            player.cleared_country_ids = player.cleared_country_ids || [];
-            player.cleared_capital_ids = player.cleared_capital_ids || [];
-
-            res.json({ player: player });
-        } catch (err) {
-            console.error('プレイヤー取得エラー:', err.message);
-            res.status(500).json({ message: 'サーバーエラー' });
-        }
-    });
-
-    /**
-     * POST /api/score/update
-     * プレイヤーのクリアスコアを+1し、クリアした問題IDを記録する
-     */
-    app.post('/api/score/update', async (req, res) => {
-        // ★修正3-1: puzzleIdを受け取る★
-        const { playerId, mode, puzzleId } = req.body;
-        
-        const clearCountColumn = mode === 'country' ? 'country_clears' : 'capital_clears';
-        const clearedIdsColumn = mode === 'country' ? 'cleared_country_ids' : 'cleared_capital_ids';
-        const puzzleIdInt = parseInt(puzzleId);
-
-        if (!playerId || !['country', 'capital'].includes(mode) || isNaN(puzzleIdInt)) {
-            return res.status(400).json({ message: '無効なリクエストです。' });
-        }
-        
-        // トランザクションを開始し、原子性を確保
-        const client = await db.pool.connect();
-        try {
-            await client.query('BEGIN');
-            
-            // 1. 既にクリア済みかどうかを確認（二重加算防止）
-            const checkResult = await client.query(
-                `SELECT ${clearedIdsColumn} FROM players WHERE id = $1`,
-                [playerId]
-            );
-            
-            const clearedIds = checkResult.rows[0] ? checkResult.rows[0][clearedIdsColumn] || [] : [];
-            
-            if (clearedIds.includes(puzzleIdInt)) {
-                // 既にクリア済みの場合、スコアは更新せず、現在のスコアを返す（クライアントに最新値を伝える）
-                await client.query('ROLLBACK');
-                const currentScoreResult = await db.query(`SELECT ${clearCountColumn} FROM players WHERE id = $1`, [playerId]);
-                return res.status(200).json({ 
-                    newScore: currentScoreResult.rows[0] ? currentScoreResult.rows[0][clearCountColumn] : 0, 
-                    message: 'この問題は既にクリア済みです。' 
-                });
-            }
-
-            // 2. スコアをインクリメントし、クリア済みIDを追加
-            // ★修正3-2: スコアをインクリメントし、クリア済みIDを配列に追加する★
-            const updateResult = await client.query(
-                `UPDATE players SET ${clearCountColumn} = ${clearCountColumn} + 1, ${clearedIdsColumn} = array_append(${clearedIdsColumn}, $2) WHERE id = $1 RETURNING ${clearCountColumn}`,
-                [playerId, puzzleIdInt]
-            );
-            
-            await client.query('COMMIT');
-            
-            if (updateResult.rows.length === 0) {
-                return res.status(404).json({ message: 'プレイヤーが見つかりません。' });
-            }
-
-            res.json({ newScore: updateResult.rows[0][clearCountColumn], message: 'スコアを更新しました。' });
-        } catch (err) {
-            await client.query('ROLLBACK');
-            console.error('スコア更新エラー:', err.message);
-            res.status(500).json({ message: 'サーバーエラーによりスコアを更新できませんでした。' });
-        } finally {
-            client.release();
+    try {
+        // 重複チェック
+        const existing = await db.query('SELECT * FROM players WHERE nickname = $1', [nickname]);
+        if (existing.rows.length > 0) {
+            return res.status(400).json({ message: 'このニックネームは既に使われています。' });
         }
-    });
-    
-    // --- (ランキング、辞書、問題登録、問題リストのAPIは変更なし) ---
-    
-    /**
-     * GET /api/rankings/:type
-     * ランキングデータを取得
-     */
-    app.get('/api/rankings/:type', async (req, res) => {
-        const { type } = req.params;
-        let column;
 
-        if (type === 'country') column = 'country_clears';
-        else if (type === 'capital') column = 'capital_clears';
-        else if (type === 'total') column = 'country_clears + capital_clears';
-        else return res.status(400).json({ message: '無効なランキングタイプです。' });
+        const hash = await hashPasscode(passcode);
+        const result = await db.query(
+            `INSERT INTO players (nickname, passcode_hash, country_clears, capital_clears, 
+              cleared_country_ids, cleared_capital_ids)
+             VALUES ($1, $2, 0, 0, $3, $4)
+             RETURNING id, nickname, country_clears, capital_clears`,
+            [nickname, hash, JSON.stringify([]), JSON.stringify([])]
+        );
 
-        try {
-            // SQLクエリを一行で記述し、不正なスペースの混入を防ぐ
-            const result = await db.query(
-                `SELECT nickname, ${column} AS score FROM players ORDER BY score DESC, created_at ASC LIMIT 100`
-            );
-            
-            // 取得したデータに順位(rank)を付与して返す
-            const rankings = result.rows.map((row, index) => ({
-                rank: index + 1,
-                nickname: row.nickname,
-                score: row.score
-            }));
+        res.json({ 
+            message: '登録完了！', 
+            player: result.rows[0] 
+        });
+    } catch (err) {
+        console.error('サインアップエラー:', err.message);
+        res.status(500).json({ message: 'サーバーエラーにより登録できませんでした。' });
+    }
+});
 
-            res.json(rankings);
-        } catch (err) {
-            console.error('ランキング取得エラー:', err.message);
-            res.status(500).json({ message: 'サーバーエラーによりランキングを取得できませんでした。' });
-        }
-    });
+// ----------------------------------------------------
+// ✅ 2. ログイン API
+// ----------------------------------------------------
+app.post('/api/login', async (req, res) => {
+    const { nickname, passcode } = req.body;
 
-    /**
-     * GET /api/words/:mode
-     * 利用可能な国名/首都名リストをクライアントに提供
-     */
-    app.get('/api/words/:mode', (req, res) => {
-        const { mode } = req.params;
-        if (mode === 'country') {
-            return res.json(COUNTRY_WORDS);
-        } else if (mode === 'capital') {
-            return res.json(CAPITAL_WORDS);
-        }
-        return res.status(400).json({ message: '無効なモードです。' });
-    });
+    if (!nickname || !passcode) {
+        return res.status(400).json({ message: 'ニックネームとパスコードを入力してください。' });
+    }
 
-    /**
-     * POST /api/puzzles
-     * ユーザーが制作した問題をデータベースに登録する
-     */
-    app.post('/api/puzzles', async (req, res) => {
-        const { mode, boardData, creator } = req.body;
-        
-        if (!mode || !boardData || !creator) {
-            return res.status(400).json({ message: '問題のデータが不完全です。' });
-        }
-        
-        try {
-            const newPuzzle = await db.query(
-                'INSERT INTO puzzles (mode, board_data, creator) VALUES ($1, $2, $3) RETURNING id, creator',
-                [mode, JSON.stringify(boardData), creator]
-            );
+    try {
+        const result = await db.query('SELECT * FROM players WHERE nickname = $1', [nickname]);
+        if (result.rows.length === 0) {
+            return res.status(400).json({ message: 'ユーザーが存在しません。' });
+        }
 
-            res.status(201).json({ 
-                puzzle: { id: newPuzzle.rows[0].id, creator: newPuzzle.rows[0].creator }, 
-                message: '問題が正常に登録されました。'
-            });
-        } catch (err) {
-            console.error('問題登録エラー:', err.message);
-            res.status(500).json({ message: '問題の登録中にサーバーエラーが発生しました。' });
-        }
-    });
+        const player = result.rows[0];
+        const match = await comparePasscode(passcode, player.passcode_hash);
+        if (!match) {
+            return res.status(401).json({ message: 'パスコードが違います。' });
+        }
 
-    /**
-     * GET /api/puzzles/:mode
-     * 指定されたモードの問題リストを取得する (古い登録順)
-     */
-    app.get('/api/puzzles/:mode', async (req, res) => {
-        const { mode } = req.params;
-        
-        if (!['country', 'capital'].includes(mode)) {
-            return res.status(400).json({ message: '無効なモードです。' });
-        }
-        
-        try {
-            // 作成日時が古い順にソートして全て取得
-            const result = await db.query(
-                'SELECT id, board_data AS data, creator FROM puzzles WHERE mode = $1 ORDER BY created_at ASC',
-                [mode]
-            );
-            
-            res.json(result.rows);
-        } catch (err) {
-            console.error('問題リスト取得エラー:', err.message);
-            res.status(500).json({ message: 'サーバーエラーにより問題を取得できませんでした。' });
-        }
-    });
+        res.json({
+            message: 'ログイン成功！',
+            player: {
+                id: player.id,
+                nickname: player.nickname,
+                country_clears: player.country_clears,
+                capital_clears: player.capital_clears,
+                cleared_country_ids: player.cleared_country_ids ? JSON.parse(player.cleared_country_ids) : [],
+                cleared_capital_ids: player.cleared_capital_ids ? JSON.parse(player.cleared_capital_ids) : []
+            }
+        });
+    } catch (err) {
+        console.error('ログインエラー:', err.message);
+        res.status(500).json({ message: 'ログイン失敗: サーバーエラーが発生しました。' });
+    }
+});
 
+// ----------------------------------------------------
+// ✅ 3. 問題取得 API（未クリアのみ出題）
+// ----------------------------------------------------
+app.get('/api/puzzle/:mode/:playerId', async (req, res) => {
+    const { mode, playerId } = req.params;
+    if (!['country', 'capital'].includes(mode)) {
+        return res.status(400).json({ message: '不正なモードです。' });
+    }
 
-    // --- サーバー起動 ---
-    app.listen(PORT, () => {
-        // ★★★ 修正箇所: 起動ログで実際に使用しているポートを表示 ★★★
-        console.log(`🚀 サーバーはポート ${PORT} で稼働中です！`);
-    });
+    try {
+        const playerRes = await db.query(
+            `SELECT cleared_${mode}_ids FROM players WHERE id = $1`,
+            [playerId]
+        );
 
-})().catch(err => {
-    console.error('❌ 致命的なサーバー起動エラー:', err.message);
-    process.exit(1);
+        if (playerRes.rows.length === 0) {
+            return res.status(404).json({ message: 'プレイヤーが見つかりません。' });
+        }
+
+        const clearedIds = playerRes.rows[0][`cleared_${mode}_ids`]
+            ? JSON.parse(playerRes.rows[0][`cleared_${mode}_ids`])
+            : [];
+
+        const puzzleRes = await db.query(
+            `SELECT * FROM puzzles WHERE mode = $1 ORDER BY created_at ASC`,
+            [mode]
+        );
+
+        const nextPuzzle = puzzleRes.rows.find(p => !clearedIds.includes(p.id));
+
+        if (!nextPuzzle) {
+            return res.json({ message: '全ての問題をクリアしました！', puzzle: null });
+        }
+
+        res.json({
+            puzzle: {
+                id: nextPuzzle.id,
+                mode: nextPuzzle.mode,
+                board_data: nextPuzzle.board_data,
+                creator_name: nextPuzzle.creator_name
+            }
+        });
+    } catch (err) {
+        console.error('問題取得エラー:', err.message);
+        res.status(500).json({ message: '問題を取得できませんでした。' });
+    }
+});
+
+// ----------------------------------------------------
+// ✅ 4. スコア更新 API（JSON配列対応版）
+// ----------------------------------------------------
+app.post('/api/score/update', async (req, res) => {
+    const { playerId, mode, puzzleId } = req.body;
+    const clearCountColumn = mode === 'country' ? 'country_clears' : 'capital_clears';
+    const clearedIdsColumn = mode === 'country' ? 'cleared_country_ids' : 'cleared_capital_ids';
+    const puzzleIdInt = parseInt(puzzleId);
+
+    if (!playerId || !['country', 'capital'].includes(mode) || isNaN(puzzleIdInt)) {
+        return res.status(400).json({ message: '無効なリクエストです。' });
+    }
+
+    try {
+        const playerRes = await db.query(
+            `SELECT ${clearCountColumn}, ${clearedIdsColumn} FROM players WHERE id = $1`,
+            [playerId]
+        );
+
+        if (playerRes.rows.length === 0) {
+            return res.status(404).json({ message: 'プレイヤーが見つかりません。' });
+        }
+
+        const player = playerRes.rows[0];
+        const clearedIds = player[clearedIdsColumn] ? JSON.parse(player[clearedIdsColumn]) : [];
+
+        if (clearedIds.includes(puzzleIdInt)) {
+            return res.json({
+                newScore: player[clearCountColumn],
+                message: 'この問題は既にクリア済みです。'
+            });
+        }
+
+        clearedIds.push(puzzleIdInt);
+        const newScore = player[clearCountColumn] + 1;
+
+        await db.query(
+            `UPDATE players 
+             SET ${clearCountColumn} = $1, ${clearedIdsColumn} = $2 
+             WHERE id = $3`,
+            [newScore, JSON.stringify(clearedIds), playerId]
+        );
+
+        res.json({ newScore, message: 'スコアを更新しました。' });
+    } catch (err) {
+        console.error('スコア更新エラー:', err.message);
+        res.status(500).json({ message: 'サーバーエラーによりスコアを更新できませんでした。' });
+    }
+});
+
+// ----------------------------------------------------
+// ✅ 5. 問題作成 API
+// ----------------------------------------------------
+app.post('/api/puzzle/create', async (req, res) => {
+    const { mode, creatorName, boardData } = req.body;
+
+    if (!mode || !creatorName || !boardData) {
+        return res.status(400).json({ message: '全ての項目を入力してください。' });
+    }
+
+    try {
+        await db.query(
+            `INSERT INTO puzzles (mode, creator_name, board_data)
+             VALUES ($1, $2, $3)`,
+            [mode, creatorName, JSON.stringify(boardData)]
+        );
+        res.json({ message: '問題を登録しました。' });
+    } catch (err) {
+        console.error('問題登録エラー:', err.message);
+        res.status(500).json({ message: '問題登録に失敗しました。' });
+    }
+});
+
+// ----------------------------------------------------
+// ✅ 6. ランキング API
+// ----------------------------------------------------
+app.get('/api/ranking/:type', async (req, res) => {
+    const { type } = req.params;
+    const column =
+        type === 'country' ? 'country_clears' :
+        type === 'capital' ? 'capital_clears' :
+        type === 'total' ? '(country_clears + capital_clears)' : null;
+
+    if (!column) return res.status(400).json({ message: '不正なランキングタイプです。' });
+
+    try {
+        const result = await db.query(
+            `SELECT nickname, country_clears, capital_clears, 
+                    (country_clears + capital_clears) AS total_clears
+             FROM players
+             ORDER BY ${column} DESC, id ASC
+             LIMIT 50`
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.error('ランキング取得エラー:', err.message);
+        res.status(500).json({ message: 'ランキング取得に失敗しました。' });
+    }
+});
+
+// ----------------------------------------------------
+// ✅ 7. 国名/首都名ワード一覧 API
+// ----------------------------------------------------
+app.get('/api/wordlist/:mode', async (req, res) => {
+    const { mode } = req.params;
+    try {
+        const filePath = path.join(__dirname, `../data/${mode}_puzzles.json`);
+        const words = require(filePath);
+        res.json(words);
+    } catch (err) {
+        console.error('ワードリスト取得エラー:', err.message);
+        res.status(500).json({ message: 'ワードリストを取得できませんでした。' });
+    }
+});
+
+// ----------------------------------------------------
+// ✅ 起動
+// ----------------------------------------------------
+app.listen(PORT, () => {
+    console.log(`✅ 国名ケシマスサーバー起動中: http://localhost:${PORT}`);
 });
