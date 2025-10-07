@@ -12,13 +12,16 @@ const CAPITAL_PUZZLES = require('./data/capital_puzzles.json');
 async function initializeDatabase() {
     try {
         // --- 1. players テーブルの定義 ---
+        // ★★★ 修正箇所: cleared_country_ids と cleared_capital_ids を追加 ★★★
         const createPlayersTable = `
             CREATE TABLE IF NOT EXISTS players (
                 id SERIAL PRIMARY KEY,
                 nickname VARCHAR(10) UNIQUE NOT NULL,
                 passcode_hash TEXT NOT NULL,
                 country_clears INTEGER DEFAULT 0,
-                capital_clears INTEGER DEFAULT 0,
+                capital_clears INTEGER DEFAULT 0, -- 前回のご報告のbigintではなく、他のclearsと合わせてINTEGERに統一
+                cleared_country_ids JSONB DEFAULT '[]'::jsonb, -- クリア済みパズルIDを格納 (JSONB型推奨)
+                cleared_capital_ids JSONB DEFAULT '[]'::jsonb,  -- クリア済みパズルIDを格納 (JSONB型推奨)
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
         `;
@@ -60,8 +63,7 @@ async function initializeDatabase() {
             const allInitialPuzzles = [...countryPuzzles, ...capitalPuzzles];
             
             for (const puzzle of allInitialPuzzles) {
-                // ★★★ 最終修正箇所: JSON.stringify() で明示的に文字列化する ★★★
-                // これにより、Node.jsの自動変換エラーを回避し、PostgreSQLに有効なJSON文字列を渡す
+                // JSON.stringify() で明示的に文字列化する
                 const jsonBoardData = JSON.stringify(puzzle.board_data);
 
                 await db.query(
