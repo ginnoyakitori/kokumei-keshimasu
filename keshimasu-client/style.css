@@ -398,7 +398,7 @@ h2 {
     text-align: center;
     background-color: #333;
     color: var(--color-accent); 
-    font-size: 1.2em;
+    font-size: 1.8em;
     font-weight: 900;
     border: none;
     outline: none;
@@ -715,7 +715,7 @@ h2 {
 
     /* ★★★ 盤面の幅を100%に設定 ★★★ */
     #board, .create-grid { 
-        width: 100%;
+        width: 95%;
         max-width: 100%; 
         
         /* 5列に均等に分割し、幅いっぱいに広がるようにする */
@@ -733,7 +733,7 @@ h2 {
 
     /* 制作モードの入力欄も調整 */
     .create-input {
-        font-size: 6vw;
+        font-size: 4vw;
     }
 
     /* ボタン群を縦に積み重ねるなど、レイアウトを調整 */
