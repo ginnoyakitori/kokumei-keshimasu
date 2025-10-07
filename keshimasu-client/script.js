@@ -653,7 +653,23 @@ function handleCellClick(event) {
 eraseButton.addEventListener('click', async () => { 
     if (selectedCells.length < 2) return;
 
-    let selectedWordChars = selectedCells.map(([r, c]) => boardData[r][c]); 
+    // ★★★ 🚨 修正箇所: 選択されたセルを正しい順番（左から右、上から下）にソートする ★★★
+    let sortedSelectedCells = [...selectedCells];
+    const [firstR, firstC] = selectedCells[0];
+    // selectedCellsがすべて同じ行 (r) であれば水平方向
+    const isHorizontal = selectedCells.every(coord => coord[0] === firstR); 
+    
+    if (isHorizontal) {
+        // 水平方向の場合: 列 (c) で昇順にソート (左から右)
+        sortedSelectedCells.sort((a, b) => a[1] - b[1]);
+    } else {
+        // 垂直方向の場合: 行 (r) で昇順にソート (上から下)
+        // 垂直方向であることは、selectedCellsの要素が全て同じ列 (c) であることからも確認できるが、ここではisHorizontalがfalseなら垂直と判断
+        sortedSelectedCells.sort((a, b) => a[0] - b[0]);
+    }
+    // ★★★ 修正箇所はここまで ★★★
+
+    let selectedWordChars = sortedSelectedCells.map(([r, c]) => boardData[r][c]); 
     let selectedWord = selectedWordChars.join(''); 
     let finalWord = ''; 
 
@@ -987,8 +1003,9 @@ document.getElementById('btn-ranking-back').addEventListener('click', () => {
     showScreen('home');
 });
 document.getElementById('btn-word-list-back').addEventListener('click', () => {
-    showScreen('home');
+    showScreen('home');
 });
 
-// 初期化
+
+// --- 7. 初期化 ---
 setupPlayer();
