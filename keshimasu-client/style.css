@@ -651,3 +651,64 @@ h2 {
 .switch-link:hover {
     color: var(--color-text-light);
 }
+
+/* ======================================= */
+/* 7. スマートフォン対応 (画面縮小) */
+/* ======================================= */
+
+@media (max-width: 600px) {
+    /* アプリ全体を縮小 */
+    body {
+        /* デバイスの横幅に合わせてフォントサイズを調整することで全体を縮小 */
+        font-size: 14px; 
+    }
+    
+    /* ゲーム画面全体（.game-container）の横幅を固定して縮小 */
+    .game-container {
+        /* 画面いっぱいに広げず、適切なサイズに制限 */
+        max-width: 95vw; 
+        margin: 0 auto;
+        padding: 8px; /* パディングも少し減らす */
+    }
+
+    /* ゲームボードのセルサイズを縮小 */
+    #board, #create-board {
+        grid-template-rows: repeat(5, 50px); /* 縦幅を少し詰める */
+        grid-template-columns: repeat(5, 50px); /* 横幅を縮小 */
+        gap: 2px; /* セル間の隙間も少し減らす */
+    }
+
+    .cell {
+        width: 50px;
+        height: 50px;
+        font-size: 20px; /* 文字サイズも縮小 */
+        line-height: 50px; 
+    }
+
+    /* ボタン群を縦に積み重ねるなど、レイアウトを調整 */
+    .controls {
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .status-display {
+        padding: 8px;
+    }
+
+    /* 認証画面のフォーム幅を調整 */
+    #auth-screen input[type="text"], 
+    #auth-screen input[type="password"] {
+        width: 90%; 
+        max-width: 300px;
+    }
+    
+    /* 制作モードの入力欄も縮小 */
+    .create-cell .create-input {
+        font-size: 20px;
+    }
+
+    /* ランキングテーブルの文字サイズを調整 */
+    .ranking-table th, .ranking-table td {
+        font-size: 13px;
+    }
+}
