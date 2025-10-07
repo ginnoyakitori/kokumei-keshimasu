@@ -38,6 +38,7 @@ body {
     max-width: 500px;
     text-align: center;
     border: 1px solid #444;
+     box-sizing: border-box;
 }
 
 /* メインタイトル: JSで表示/非表示を制御 (ホーム画面以外で非表示) */
@@ -733,7 +734,7 @@ h2 {
 
     /* 制作モードの入力欄も調整 */
     .create-input {
-        font-size: 6vw;
+        font-size: 15px;
     }
 
     /* ボタン群を縦に積み重ねるなど、レイアウトを調整 */
