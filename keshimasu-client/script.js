@@ -525,7 +525,7 @@ async function submitNewPuzzle(mode, boardData, creator) {
 
 /**
  * ゲームクリア時にスコア更新、通知、画面更新を行う
- * ★★★ 修正のコア部分 ★★★
+ * ★★★ 修正のコア部分 (問題制作モードのクリア後の処理) ★★★
  */
 async function checkGameStatus() { 
     const totalChars = boardData.flat().filter(char => char !== '').length;
@@ -558,20 +558,31 @@ async function checkGameStatus() {
             
             // 3. 問題リストとホーム画面表示を更新するため、サーバーからデータを再ロード
             await loadPuzzlesAndWords(); 
-
+            showScreen('home'); // 標準モードはホームに戻る
+        
         } else {
             const registrationConfirmed = confirm("🎉 作成した問題をクリアしました！\nこの問題を標準問題として登録しますか？");
             if (registrationConfirmed) {
                 const finalBoard = JSON.parse(JSON.stringify(initialPlayData));
                 await submitNewPuzzle(mode, finalBoard, currentPlayerNickname);
+                showScreen('home'); // 登録した場合はホームに戻る
             } else {
-                alert("問題の登録をスキップしました。");
+                alert("問題の登録をスキップしました。作成画面に戻ります。");
+                // ★★★ 修正箇所 ★★★
+                // 登録をスキップした場合、問題作成画面に戻す
+                showScreen('create'); 
+                renderCreateBoard(); // 盤面入力UIを再描画
+                // 元の盤面データ(initialPlayData)で入力フィールドを埋める (任意)
+                fillCreateBoard(initialPlayData); 
+                btnInputComplete.disabled = false;
+                document.getElementById('create-status').textContent = '入力完了！解答を開始できます。';
+                // 問題モードの選択をクリア時のモードに合わせる
+                document.getElementById('creation-mode-select').value = mode; 
             }
         }
-        // loadPuzzlesAndWords() の中で updateHomeProblemCount() が呼ばれるため、この時点での showScreen('home') は正しい表示となる
-        showScreen('home');
     }
 }
+
 
 // --- 3. ゲームロジックの中核 ---
 
@@ -653,7 +664,7 @@ function handleCellClick(event) {
 eraseButton.addEventListener('click', async () => { 
     if (selectedCells.length < 2) return;
 
-    // ★★★ 🚨 修正箇所: 選択されたセルを正しい順番（左から右、上から下）にソートする ★★★
+    // 選択されたセルを正しい順番（左から右、上から下）にソートする
     let sortedSelectedCells = [...selectedCells];
     const [firstR, firstC] = selectedCells[0];
     // selectedCellsがすべて同じ行 (r) であれば水平方向
@@ -664,10 +675,8 @@ eraseButton.addEventListener('click', async () => {
         sortedSelectedCells.sort((a, b) => a[1] - b[1]);
     } else {
         // 垂直方向の場合: 行 (r) で昇順にソート (上から下)
-        // 垂直方向であることは、selectedCellsの要素が全て同じ列 (c) であることからも確認できるが、ここではisHorizontalがfalseなら垂直と判断
         sortedSelectedCells.sort((a, b) => a[0] - b[0]);
     }
-    // ★★★ 修正箇所はここまで ★★★
 
     let selectedWordChars = sortedSelectedCells.map(([r, c]) => boardData[r][c]); 
     let selectedWord = selectedWordChars.join(''); 
@@ -737,6 +746,9 @@ eraseButton.addEventListener('click', async () => {
 resetBtn.addEventListener('click', () => { 
     if (isCreationPlay) {
         showScreen('create');
+        renderCreateBoard(); // 制作画面のボードをリセット
+        // 制作モードで元の入力データを盤面に復元
+        fillCreateBoard(initialPlayData); 
         btnInputComplete.disabled = false;
         document.getElementById('create-status').textContent = '入力完了！解答を開始できます。';
         
@@ -780,7 +792,22 @@ function renderCreateBoard() {
             createBoardElement.appendChild(cell);
         }
     }
+    // 初期値は国名モードにする
     document.getElementById('creation-mode-select').value = 'country';
+}
+
+// 新しいヘルパー関数: 2次元配列のデータを制作ボードのinputに設定する
+function fillCreateBoard(data) {
+    if (!data || data.length === 0) return;
+    const inputs = document.querySelectorAll('.create-input');
+    inputs.forEach(input => {
+        const r = parseInt(input.dataset.r);
+        const c = parseInt(input.dataset.c);
+        if (r < data.length && c < data[r].length) {
+            input.value = data[r][c] || '';
+        }
+    });
+    checkCreationInput(); // 埋めた後にステータスを更新
 }
 
 function checkCreationInput(event) {
