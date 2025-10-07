@@ -1,4 +1,4 @@
-// keshimasu-client/script.js (最終版 - 端末間同期対応済み, 問題リスト構造修正済み)
+// keshimasu-client/script.js (修正版)
 // ----------------------------------------------------
 
 // ★★★ 🚨 要修正 ★★★
@@ -454,6 +454,7 @@ function updateStatusDisplay() {
 
 /**
  * プレイヤーのスコアとクリア済みIDをサーバーに更新する
+ * サーバーから更新後の最新スコアを返す (server.jsで修正済みと仮定)
  */
 async function updatePlayerScore(mode, puzzleId) { 
     if (!currentPlayerId || isCreationPlay) {
@@ -476,6 +477,7 @@ async function updatePlayerScore(mode, puzzleId) {
         const data = await response.json();
         
         // ★修正: サーバーから返された最新スコアでplayerStatsを更新 ★
+        // これで次の alert の際に正しい値が表示される
         playerStats[mode + '_clears'] = data.newScore;
         
     } catch (error) {
@@ -511,39 +513,48 @@ async function submitNewPuzzle(mode, boardData, creator) {
         alert("問題の登録に失敗しました。サーバーが起動しているか、API_BASE_URLが正しいか確認してください。");
     }
 }
+
+/**
+ * ゲームクリア時にスコア更新、通知、画面更新を行う
+ * ★★★ 修正のコア部分 ★★★
+ */
 async function checkGameStatus() { 
-    const totalChars = boardData.flat().filter(char => char !== '').length;
-    
-    if (totalChars === 0) {
-        const mode = isCountryMode ? 'country' : 'capital';
-        const modeName = isCountryMode ? '国名' : '首都名';
-        
-        if (!isCreationPlay) {
-            const problemDataList = allPuzzles[mode].puzzles || [];
-            const currentPuzzle = problemDataList[currentPuzzleIndex];
-            
-            if (currentPuzzle && currentPuzzle.id) {
-                markPuzzleAsCleared(mode, currentPuzzle.id); 
-                await updatePlayerScore(mode, currentPuzzle.id); 
-            }
+    const totalChars = boardData.flat().filter(char => char !== '').length;
+    
+    if (totalChars === 0) {
+        const mode = isCountryMode ? 'country' : 'capital';
+        const modeName = isCountryMode ? '国名' : '首都名';
+        
+        if (!isCreationPlay) {
+            const problemDataList = allPuzzles[mode].puzzles || [];
+            const currentPuzzle = problemDataList.find(p => p.data === initialPlayData); // 初期データからパズルを特定
 
-            // 🟢 ★追加: 最新の問題リストとcleared_idsを再取得
-            await loadPuzzlesAndWords();
+            if (currentPuzzle && currentPuzzle.id) {
+                markPuzzleAsCleared(mode, currentPuzzle.id); 
+                
+                // 1. スコア更新を待ち、playerStatsを最新値にする
+                await updatePlayerScore(mode, currentPuzzle.id); 
+            }
 
-            const latestClearedCount = playerStats[mode + '_clears']; 
-            alert(`🎉 全ての文字を消去しました！クリアです！\nあなたの${modeName}クリア数は${latestClearedCount}問になりました。`);
+            // 2. 通知に最新のスコア (playerStats[mode + '_clears']) を反映
+            const latestClearedCount = playerStats[mode + '_clears']; 
+            alert(`🎉 全ての文字を消去しました！クリアです！\nあなたの${modeName}クリア数は${latestClearedCount}問になりました。`);
+            
+            // 3. 問題リストとホーム画面表示を更新するため、サーバーからデータを再ロード
+            await loadPuzzlesAndWords(); 
 
-        } else {
-            const registrationConfirmed = confirm("🎉 作成した問題をクリアしました！\nこの問題を標準問題として登録しますか？");
-            if (registrationConfirmed) {
-                const finalBoard = JSON.parse(JSON.stringify(initialPlayData));
-                await submitNewPuzzle(mode, finalBoard, currentPlayerNickname);
-            } else {
-                alert("問題の登録をスキップしました。");
-            }
-        }
-        showScreen('home');
-    }
+        } else {
+            const registrationConfirmed = confirm("🎉 作成した問題をクリアしました！\nこの問題を標準問題として登録しますか？");
+            if (registrationConfirmed) {
+                const finalBoard = JSON.parse(JSON.stringify(initialPlayData));
+                await submitNewPuzzle(mode, finalBoard, currentPlayerNickname);
+            } else {
+                alert("問題の登録をスキップしました。");
+            }
+        }
+        // loadPuzzlesAndWords() の中で updateHomeProblemCount() が呼ばれるため、この時点での showScreen('home') は正しい表示となる
+        showScreen('home');
+    }
 }
 
 // --- 3. ゲームロジックの中核 ---
