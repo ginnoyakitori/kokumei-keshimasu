@@ -720,14 +720,14 @@ h2 {
         
         /* 5列に均等に分割し、幅いっぱいに広がるようにする */
         grid-template-columns: repeat(5, 1fr); 
-        gap: 2px;
+        gap: 0px;
         margin: 10px auto; 
     }
 
     /* セルは親（グリッド）の幅に対して相対的なサイズになるため、固定サイズを解除 */
     .cell, .create-cell {
         aspect-ratio: 1 / 1; 
-        font-size: 10vw; /* 画面幅の4%をフォントサイズに利用 */
+        font-size: 15vw; /* 画面幅の4%をフォントサイズに利用 */
         font-weight: 900;
     }
 
