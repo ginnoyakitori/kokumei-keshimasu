@@ -1,5 +1,5 @@
 /* ---------------------------------------------------- */
-/* CSSコード - style.css (最終版: スマホ盤面幅100%修正済み) */
+/* CSSコード - style.css (最終版: スマホタップ反応改善済み) */
 /* ---------------------------------------------------- */
 
 /* --- カラー変数定義 (一貫性のために追加) --- */
@@ -215,6 +215,9 @@ h2 {
 }
 
 .cell {
+    /* ★★★ 修正箇所: touch-actionを追加 ★★★ */
+    touch-action: manipulation; /* モバイルでのタップ遅延を軽減 */
+    
     border: 1px solid #555; /* 枠線を少し濃く */
     display: flex;
     justify-content: center;
@@ -364,6 +367,9 @@ h2 {
 }
 
 .create-cell {
+    /* ★★★ 修正箇所: touch-actionを追加 ★★★ */
+    touch-action: manipulation; /* モバイルでのタップ遅延を軽減 */
+    
     border: 1px solid #444;
     aspect-ratio: 1 / 1; 
     display: flex;
