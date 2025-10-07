@@ -511,46 +511,40 @@ async function submitNewPuzzle(mode, boardData, creator) {
         alert("問題の登録に失敗しました。サーバーが起動しているか、API_BASE_URLが正しいか確認してください。");
     }
 }
-
 async function checkGameStatus() { 
-    const totalChars = boardData.flat().filter(char => char !== '').length;
-    
-    if (totalChars === 0) {
-        const mode = isCountryMode ? 'country' : 'capital';
-        const modeName = isCountryMode ? '国名' : '首都名';
-        
-        if (!isCreationPlay) {
-            // 標準問題のクリア処理
-            const problemDataList = allPuzzles[mode].puzzles || [];
-            const currentPuzzle = problemDataList[currentPuzzleIndex];
-            
-            if (currentPuzzle && currentPuzzle.id) {
-                // ローカルのクリア記録を確実に行う (getClearedPuzzlesで使われる)
-                markPuzzleAsCleared(mode, currentPuzzle.id); 
-                
-                // スコア更新APIにクリアした問題のIDを通知する
-                await updatePlayerScore(mode, currentPuzzle.id); 
-            }
-            
-            // ローカルのクリア数ではなく、playerStats（サーバー）の最新値を使用
-            const latestClearedCount = playerStats[mode + '_clears']; 
-            
-            alert(`🎉 全ての文字を消去しました！クリアです！\nあなたの${modeName}クリア数は${latestClearedCount}問になりました。`);
-        } else {
-            // 制作モードのクリア処理
-            const registrationConfirmed = confirm("🎉 作成した問題をクリアしました！\nこの問題を標準問題として登録しますか？");
-            
-            if (registrationConfirmed) {
-                const finalBoard = JSON.parse(JSON.stringify(initialPlayData));
-                await submitNewPuzzle(mode, finalBoard, currentPlayerNickname);
-            } else {
-                alert("問題の登録をスキップしました。");
-            }
-        }
-        showScreen('home');
-    }
-}
+    const totalChars = boardData.flat().filter(char => char !== '').length;
+    
+    if (totalChars === 0) {
+        const mode = isCountryMode ? 'country' : 'capital';
+        const modeName = isCountryMode ? '国名' : '首都名';
+        
+        if (!isCreationPlay) {
+            const problemDataList = allPuzzles[mode].puzzles || [];
+            const currentPuzzle = problemDataList[currentPuzzleIndex];
+            
+            if (currentPuzzle && currentPuzzle.id) {
+                markPuzzleAsCleared(mode, currentPuzzle.id); 
+                await updatePlayerScore(mode, currentPuzzle.id); 
+            }
 
+            // 🟢 ★追加: 最新の問題リストとcleared_idsを再取得
+            await loadPuzzlesAndWords();
+
+            const latestClearedCount = playerStats[mode + '_clears']; 
+            alert(`🎉 全ての文字を消去しました！クリアです！\nあなたの${modeName}クリア数は${latestClearedCount}問になりました。`);
+
+        } else {
+            const registrationConfirmed = confirm("🎉 作成した問題をクリアしました！\nこの問題を標準問題として登録しますか？");
+            if (registrationConfirmed) {
+                const finalBoard = JSON.parse(JSON.stringify(initialPlayData));
+                await submitNewPuzzle(mode, finalBoard, currentPlayerNickname);
+            } else {
+                alert("問題の登録をスキップしました。");
+            }
+        }
+        showScreen('home');
+    }
+}
 
 // --- 3. ゲームロジックの中核 ---
 
