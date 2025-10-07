@@ -1,5 +1,5 @@
 /* ---------------------------------------------------- */
-/* CSSコード - style.css (最終版: スマホ制作盤面修正済み) */
+/* CSSコード - style.css (最終版: スマホ盤面幅100%修正済み) */
 /* ---------------------------------------------------- */
 
 /* --- カラー変数定義 (一貫性のために追加) --- */
@@ -355,16 +355,12 @@ h2 {
     margin-bottom: 15px;
 }
 
-/* ★★★ 修正箇所: .create-grid に .board-grid と同じグリッド設定を適用 ★★★ */
 .create-grid {
     border: 2px dashed var(--color-accent);
-    /* max-widthを削除し、親の幅に任せます。 */
     margin: 15px auto;
     
-    /* gridの設定を明示的に追加 */
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    /* .board-grid の max-width: 430px は #app-container に依存するため省略 */
 }
 
 .create-cell {
@@ -670,65 +666,56 @@ h2 {
 }
 
 /* ======================================= */
-/* 7. スマートフォン対応 (画面縮小と中央寄せの強制) */
+/* 7. スマートフォン対応 (盤面幅100%と中央寄せの強制) */
 /* ======================================= */
 
 @media (max-width: 600px) {
     
-    /* ★★★ コア修正: app-containerとbodyの強制中央寄せと幅設定 (前回の修正) ★★★ */
+    /* ★★★ アプリ全体の中央寄せ設定 ★★★ */
     body {
+        font-size: 14px; 
         padding-left: 5px;  
         padding-right: 5px;
     }
     
     #app-container {
         width: 100%;
+        max-width: 100%; /* 親コンテナの幅を制限解除 */
         margin-left: auto;
         margin-right: auto;
         padding: 15px;
     }
-    /* ★★★ 修正箇所: ゲームボードと制作ボードのグリッド設定を統一し、中央寄せを明示 ★★★ */
-    
-    /* アプリ全体を縮小 */
-    body {
-        font-size: 14px; 
-    }
-    
-    /* ゲーム画面全体（.game-container）の横幅を固定して縮小 */
+
+    /* ゲーム画面全体のコンテナ幅を100%に */
     .game-container {
-        max-width: 95vw; 
+        max-width: 100%; /* 95vw から 100% に変更 */
         margin: 0 auto;
-        padding: 8px; 
+        padding: 0; /* パディングをゼロにして、ボードに幅を持たせる */
     }
 
-    /* ゲームボードと制作モード盤面のグリッド設定 */
-    #board, #create-board { 
-        /* grid-template-rowsは後続のJSのrenderBoardで制御されるため、ここでは省略 */
-        grid-template-columns: repeat(5, 50px); /* セル幅を50pxに統一 */
-        gap: 2px; /* セル間の隙間も少し減らす */
-        /* ★重要★ 盤面全体も中央寄せを強制 */
+    /* ★★★ 盤面の幅を100%に設定 ★★★ */
+    #board, .create-grid { 
+        width: 100%;
+        max-width: 100%; /* 最大幅を解除 */
+        
+        /* 5列に均等に分割し、幅いっぱいに広がるようにする */
+        grid-template-columns: repeat(5, 1fr); 
+        gap: 2px;
         margin: 10px auto; 
     }
 
-    .cell {
-        width: 50px;
-        height: 50px;
-        font-size: 20px; 
-        line-height: 50px; 
-    }
-
-    /* 制作ボードのセルにも縮小サイズを適用 */
-    .create-cell {
-        /* .create-grid に grid-template-columns: repeat(5, 1fr) が適用されている場合、
-           この明示的なサイズは grid-template-columns: repeat(5, 50px) で上書きされますが、
-           念のため、セルの縦横比を維持します。 */
+    /* セルは親（グリッド）の幅に対して相対的なサイズになるため、固定サイズを解除 */
+    .cell, .create-cell {
+        /* height: 50px; を削除し、aspect-ratio: 1 / 1 に頼る */
         aspect-ratio: 1 / 1; 
-        width: 100%; /* 親グリッドセルの幅いっぱいに広げる */
-        height: 100%;
+        font-size: 4vw; /* 画面幅の4%をフォントサイズに利用 */
+        font-weight: 900;
+        /* line-height: 50px; は不要 */
     }
 
+    /* 制作モードの入力欄も調整 */
     .create-input {
-        font-size: 20px;
+        font-size: 4vw;
     }
 
     /* ボタン群を縦に積み重ねるなど、レイアウトを調整 */
