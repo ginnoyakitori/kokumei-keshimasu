@@ -130,81 +130,82 @@ const CAPITAL_WORDS = require('./data/capital_words.json');
         }
     });
 
-// keshimasu-server/server.js
-
-/**
- * POST /api/score/update
- * プレイヤーのクリアスコアを+1し、クリアした問題IDを記録する
- */
-app.post('/api/score/update', async (req, res) => {
-    const { playerId, mode, puzzleId } = req.body;
-    
-    const clearCountColumn = mode === 'country' ? 'country_clears' : 'capital_clears';
-    const clearedIdsColumn = mode === 'country' ? 'cleared_country_ids' : 'cleared_capital_ids';
-    const puzzleIdInt = parseInt(puzzleId);
-
-    if (!playerId || !['country', 'capital'].includes(mode) || isNaN(puzzleIdInt)) {
-        return res.status(400).json({ message: '無効なリクエストです。' });
-    }
-    
-    // トランザクションを開始し、原子性を確保
-    const client = await db.pool.connect();
-    try {
-        await client.query('BEGIN');
+    /**
+     * POST /api/score/update
+     * プレイヤーのクリアスコアを+1し、クリアした問題IDを記録する
+     */
+    app.post('/api/score/update', async (req, res) => {
+        const { playerId, mode, puzzleId } = req.body;
         
-        // 1. 現在のクリア済みIDリストを取得し、排他ロックをかける
-        const checkResult = await client.query(
-            `SELECT ${clearCountColumn}, ${clearedIdsColumn} FROM players WHERE id = $1 FOR UPDATE`, // FOR UPDATEでロック
-            [playerId]
-        );
+        const clearCountColumn = mode === 'country' ? 'country_clears' : 'capital_clears';
+        const clearedIdsColumn = mode === 'country' ? 'cleared_country_ids' : 'cleared_capital_ids';
+        const puzzleIdInt = parseInt(puzzleId);
+
+        if (!playerId || !['country', 'capital'].includes(mode) || isNaN(puzzleIdInt)) {
+            return res.status(400).json({ message: '無効なリクエストです。' });
+        }
         
-        if (checkResult.rows.length === 0) {
+        // トランザクションを開始し、原子性を確保
+        const client = await db.pool.connect();
+        try {
+            await client.query('BEGIN');
+            
+            // 1. 現在のクリア済みIDリストを取得し、排他ロックをかける
+            const checkResult = await client.query(
+                `SELECT ${clearCountColumn}, ${clearedIdsColumn} FROM players WHERE id = $1 FOR UPDATE`, // FOR UPDATEでロック
+                [playerId]
+            );
+            
+            if (checkResult.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ message: 'プレイヤーが見つかりません。' });
+            }
+            
+            const currentRow = checkResult.rows[0];
+            const currentScore = currentRow[clearCountColumn];
+            const clearedIdsJson = currentRow[clearedIdsColumn];
+            
+            // Node.js側でJSON文字列をパースし、配列として扱う
+            let clearedIds = clearedIdsJson ? JSON.parse(clearedIdsJson) : [];
+            
+            if (clearedIds.includes(puzzleIdInt)) {
+                // 既にクリア済みの場合、スコアは更新せず、現在のスコアを返す
+                await client.query('ROLLBACK');
+                return res.status(200).json({ 
+                    newScore: currentScore, 
+                    message: 'この問題は既にクリア済みです。' 
+                });
+            }
+
+            // 2. 新しいIDを追加し、JSON文字列に変換
+            clearedIds.push(puzzleIdInt);
+            const newClearedIdsJson = JSON.stringify(clearedIds);
+
+            // 3. スコアをインクリメントし、クリア済みIDのJSON文字列を更新
+            // ★★★ 修正箇所: SQLクエリから $1 を削除し、playerIdとnewClearedIdsJsonを正しく $1 と $2 にバインドする ★★★
+            const updateResult = await client.query(
+                // PostgreSQLでは、カラム名を文字列展開し、値のインクリメントはDB側で行う
+                `UPDATE players SET ${clearCountColumn} = ${clearCountColumn} + 1, ${clearedIdsColumn} = $2 WHERE id = $1 RETURNING ${clearCountColumn} AS newscore`,
+                [playerId, newClearedIdsJson]
+            );
+            
+            await client.query('COMMIT');
+            
+            if (updateResult.rows.length === 0) {
+                return res.status(404).json({ message: 'プレイヤーが見つかりません。' });
+            }
+
+            // RETURNING句で newscore とエイリアスを付けたため、.newscore でアクセス
+            res.json({ newScore: updateResult.rows[0].newscore, message: 'スコアを更新しました。' });
+        } catch (err) {
             await client.query('ROLLBACK');
-            return res.status(404).json({ message: 'プレイヤーが見つかりません。' });
+            console.error('スコア更新エラー:', err.message);
+            res.status(500).json({ message: 'サーバーエラーによりスコアを更新できませんでした。' });
+        } finally {
+            client.release();
         }
-        
-        const currentRow = checkResult.rows[0];
-        const currentScore = currentRow[clearCountColumn];
-        const clearedIdsJson = currentRow[clearedIdsColumn];
-        
-        let clearedIds = clearedIdsJson ? JSON.parse(clearedIdsJson) : [];
-        
-        if (clearedIds.includes(puzzleIdInt)) {
-            // 既にクリア済みの場合、スコアは更新せず、現在のスコアを返す
-            await client.query('ROLLBACK');
-            return res.status(200).json({ 
-                newScore: currentScore, 
-                message: 'この問題は既にクリア済みです。' 
-            });
-        }
+    });
 
-        // 2. 新しいIDを追加し、JSON文字列に変換
-        clearedIds.push(puzzleIdInt);
-        const newClearedIdsJson = JSON.stringify(clearedIds);
-
-        // 3. スコアをインクリメントし、クリア済みIDのJSON文字列を更新
-        // ★★★ ここを修正 ★★★
-        // COALESCE(${clearCountColumn}, 0) を使い、NULLの場合でも0として扱ってから+1する
-        const updateResult = await client.query(
-            `UPDATE players SET ${clearCountColumn} = COALESCE(${clearCountColumn}, 0) + 1, ${clearedIdsColumn} = $2 WHERE id = $1 RETURNING ${clearCountColumn} AS newscore`,
-            [playerId, newClearedIdsJson]
-        );
-        
-        await client.query('COMMIT');
-        
-        if (updateResult.rows.length === 0) {
-            return res.status(404).json({ message: 'プレイヤーが見つかりません。' });
-        }
-
-        res.json({ newScore: updateResult.rows[0].newscore, message: 'スコアを更新しました。' });
-    } catch (err) {
-        await client.query('ROLLBACK');
-        console.error('スコア更新エラー:', err.message);
-        res.status(500).json({ message: 'サーバーエラーによりスコアを更新できませんでした。' });
-    } finally {
-        client.release();
-    }
-});
     /**
      * GET /api/puzzles/:mode
      * 指定されたモードの問題リストを取得する (古い登録順)

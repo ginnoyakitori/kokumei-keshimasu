@@ -18,4 +18,6 @@ pool.query('SELECT NOW()')
 module.exports = {
     // クエリ実行のラッパー関数
     query: (text, params) => pool.query(text, params),
+    // ★★★ 修正箇所: トランザクションのためにpoolオブジェクト自体をエクスポートに追加 ★★★
+    pool: pool, 
 };
