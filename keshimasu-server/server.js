@@ -8,6 +8,7 @@ const initializeDatabase = require('./init_db'); // DB初期化スクリプト
 const { hashPasscode, comparePasscode } = require('./utils/auth'); // 認証ヘルパー
 
 const app = express();
+// ★★★ 修正箇所: 環境変数PORTを使用する (Renderの推奨対応) ★★★
 const PORT = process.env.PORT || 3000;
 
 // 辞書データを読み込む
@@ -153,7 +154,6 @@ const CAPITAL_WORDS = require('./data/capital_words.json');
     /**
      * GET /api/rankings/:type
      * ランキングデータを取得
-     * ★★★ 修正済み箇所 ★★★
      */
     app.get('/api/rankings/:type', async (req, res) => {
         const { type } = req.params;
@@ -253,6 +253,7 @@ const CAPITAL_WORDS = require('./data/capital_words.json');
 
     // --- サーバー起動 ---
     app.listen(PORT, () => {
+        // ★★★ 修正箇所: 起動ログで実際に使用しているポートを表示 ★★★
         console.log(`🚀 サーバーはポート ${PORT} で稼働中です！`);
     });
 
