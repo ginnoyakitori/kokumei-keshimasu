@@ -403,7 +403,13 @@ h2 {
     border: none;
     outline: none;
 
+    /* --- 濁音・半濁音入力対応 --- */
+    user-select: text;
+    -webkit-user-select: text;
+    touch-action: auto;
+    ime-mode: active;
 }
+
 
 /* --- ランキング画面 --- */
 #ranking-tabs button {
