@@ -772,29 +772,36 @@ resetBtn.addEventListener('click', () => {
 // --- 4. 問題制作モードのロジック ---
 
 function renderCreateBoard() { 
-    createBoardElement.innerHTML = '';
-    
-    for (let r = 0; r < 8; r++) {
-        for (let c = 0; c < 5; c++) {
-            const cell = document.createElement('div');
-            cell.classList.add('create-cell');
-            
-            const input = document.createElement('input');
-            input.classList.add('create-input');
-            input.type = 'text';
-            input.maxLength = 1;
-            input.dataset.r = r;
-            input.dataset.c = c;
-            
-            input.addEventListener('input', checkCreationInput);
-            input.addEventListener('blur', checkCreationInput);
-            cell.appendChild(input);
-            createBoardElement.appendChild(cell);
-        }
-    }
-    // 初期値は国名モードにする
-    document.getElementById('creation-mode-select').value = 'country';
+    createBoardElement.innerHTML = '';
+    
+    for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 5; c++) {
+            const cell = document.createElement('div');
+            cell.classList.add('create-cell');
+            
+            const input = document.createElement('input');
+            input.classList.add('create-input');
+            input.type = 'text';
+            input.maxLength = 1;
+            input.dataset.r = r;
+            input.dataset.c = c;
+          
+           // --- 修正: フリック入力・濁音対応 ---
+           input.addEventListener('input', checkCreationInput);
+           input.addEventListener('blur', checkCreationInput);
+           input.addEventListener('compositionend', (e) => {
+              // IME確定後に確定文字を取得するため短い遅延を入れる
+               setTimeout(() => checkCreationInput(e), 0);
+           });
+            
+            cell.appendChild(input);
+            createBoardElement.appendChild(cell);
+        }
+    }
+    // 初期値は国名モードにする
+    document.getElementById('creation-mode-select').value = 'country';
 }
+
 
 // 新しいヘルパー関数: 2次元配列のデータを制作ボードのinputに設定する
 function fillCreateBoard(data) {
