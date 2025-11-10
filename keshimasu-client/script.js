@@ -768,8 +768,10 @@ resetBtn.addEventListener('click', () => {
     }
 });
 
-
 // --- 4. 問題制作モードのロジック ---
+
+// ★追加: IME入力中フラグ★
+let isComposing = false; 
 
 function renderCreateBoard() { 
     createBoardElement.innerHTML = '';
@@ -787,11 +789,31 @@ function renderCreateBoard() {
             input.dataset.c = c;
           
            // --- 修正: フリック入力・濁音対応 ---
-           input.addEventListener('input', checkCreationInput);
-           input.addEventListener('blur', checkCreationInput);
+           // IME入力開始時
+           input.addEventListener('compositionstart', () => {
+               isComposing = true;
+           });
+
+           // IME入力確定時
            input.addEventListener('compositionend', (e) => {
-              // IME確定後に確定文字を取得するため短い遅延を入れる
-               setTimeout(() => checkCreationInput(e), 0);
+               isComposing = false;
+               // 確定後、即座にチェックを実行
+               checkCreationInput(e); 
+           });
+           
+           // 通常のキーボード入力やペースト時の処理 (compositionend/blurが発火しない場合)
+           input.addEventListener('input', (e) => {
+               // IME入力中でなければ、すぐにチェック
+               if (!isComposing) {
+                   checkCreationInput(e);
+               }
+               // ★重要: IME入力中は文字を確定させないため、ここでは何もしない★
+           });
+           
+           // フォーカスが外れたとき（濁音などが確定する）
+           input.addEventListener('blur', (e) => {
+               isComposing = false; // フォーカスが外れたらIMEを強制終了
+               checkCreationInput(e);
            });
             
             cell.appendChild(input);
@@ -816,38 +838,51 @@ function fillCreateBoard(data) {
     });
     checkCreationInput(); // 埋めた後にステータスを更新
 }
-
 function checkCreationInput(event) {
-    if (event && event.target) {
-        let input = event.target;
-        let value = input.value;
-        
-        value = value.toUpperCase();
-        value = toKatakana(value);
+    let shouldUpdateAll = true; // 全体の盤面ステータスを更新するかどうか
 
-        if (value.length > 0 && !isValidGameChar(value) && value !== 'F') { // Fの入力を許容
-            value = '';
-        }
+    if (event && event.target) {
+        let input = event.target;
+        let value = input.value;
+        
+        // ★修正: IME確定後、またはblur時（isComposingがfalseの時）のみ、文字のチェックと変換を行う★
+        // これにより、フリック入力中の文字が未確定の状態で変換されるのを防ぐ
+        if (event.type === 'compositionend' || event.type === 'blur' || !isComposing) {
+            
+            value = value.toUpperCase();
+            value = toKatakana(value);
 
-        input.value = value.slice(0, 1);
-    }
+            // Fの入力を許容
+            if (value.length > 0 && !isValidGameChar(value) && value !== 'F') { 
+                value = ''; // 無効な文字はクリア
+                shouldUpdateAll = false; // 入力値が無効な場合はステータス更新をスキップ
+            }
 
-    const inputs = document.querySelectorAll('.create-input');
-    let filledCount = 0;
-    
-    inputs.forEach(input => {
-        if (input.value.length === 1 && (isValidGameChar(input.value) || input.value === 'F')) {
-            filledCount++;
-        }
-    });
+            input.value = value.slice(0, 1);
+        } else {
+             // IME入力中（compositionstart後）のinputイベントは無視し、盤面全体の状態更新のみ行う
+             shouldUpdateAll = false;
+        }
+    }
 
-    if (filledCount === 40) {
-        btnInputComplete.disabled = false;
-        document.getElementById('create-status').textContent = '入力完了！解答を開始できます。';
-    } else {
-        btnInputComplete.disabled = true;
-        document.getElementById('create-status').textContent = `残り${40 - filledCount}マスに入力が必要です。`;
-    }
+    // 全ての input の状態をチェックし、完了ボタンの有効/無効を切り替える
+    // この部分は、単一の input のイベントだけでなく、fillCreateBoardからも呼ばれるため、常に実行
+    const inputs = document.querySelectorAll('.create-input');
+    let filledCount = 0;
+    
+    inputs.forEach(input => {
+        if (input.value.length === 1 && (isValidGameChar(input.value) || input.value === 'F')) {
+            filledCount++;
+        }
+    });
+
+    if (filledCount === 40) {
+        btnInputComplete.disabled = false;
+        document.getElementById('create-status').textContent = '入力完了！解答を開始できます。';
+    } else {
+        btnInputComplete.disabled = true;
+        document.getElementById('create-status').textContent = `残り${40 - filledCount}マスに入力が必要です。`;
+    }
 }
 
 btnInputComplete.addEventListener('click', () => {
