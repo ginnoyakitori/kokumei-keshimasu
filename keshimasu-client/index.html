@@ -3,43 +3,41 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ポケモンケシマス</title>
+    <title>国名ケシマス</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div id="app-container">
-        <h1 id="app-title">ポケモンケシマス</h1>
+        <h1 id="app-title">国名ケシマス</h1>
 
-        <section id="auth-screen" style="display: block;">
-    <div id="login-screen" class="auth-screen screen">
-    <div class="auth-form">
-        <h2>ポケモンケシマス</h2>
-        
-        <input type="text" id="nickname-input" placeholder="ニックネーム (20文字まで)" maxlength="20">
-        
-        <input type="password" id="passcode-input" placeholder="パスコード (認証用)">
-
-        <div class="auth-button-group">
-            <button id="login-btn" class="auth-btn login-btn">ログイン</button>
-            <button id="signup-btn" class="auth-btn signup-btn secondary-btn">新規登録</button>
+        <div id="auth-screen" class="screen">
+            <h2>ようこそ！</h2>
+            <p id="auth-message">ニックネームとパスコードを入力して、ログインまたは初回登録をしてください。</p>
+            
+            <div class="auth-form">
+                <input type="text" id="input-nickname" placeholder="ニックネーム (10文字以内)" maxlength="10">
+                <input type="password" id="input-passcode" placeholder="パスコード" maxlength="20">
+                
+                <button id="btn-auth-submit">ログイン/新規登録</button>
+            </div>
+            
+            <button id="btn-play-as-guest" class="secondary-btn" style="margin-top: 15px;">
+                ゲストとしてプレイ（スコアは保存されません）
+            </button>
         </div>
-        
-        <button id="guest-play-btn" class="switch-link">ゲストとしてプレイ (スコア非保存)</button>
-    </div>
-</div>
-
-</section>
         <div id="home-screen" class="screen" style="display:none;">
             
             <p id="welcome-message" style="font-weight: bold; font-size: 1.1em; color: #FFD700; margin-bottom: 20px;">
                 </p>
             
+          
+
             <div class="game-rules">
                 <h3>ゲームルール</h3>
                 <p>盤面の全ての文字を消去してクリアを目指すパズルゲームです。</p>
                 
                 <ul class="rule-list">
-                    <li>消去条件: 盤面上の文字を、左から右 または 上から下 に向かって一直線に選択し、その文字列をポケモン（または首都名）にすることで消去できます。</li>
+                    <li>消去条件: 盤面上の文字を、左から右 または 上から下 に向かって一直線に選択し、その文字列を国名（または首都名）にすることで消去できます。</li>
                     <li>ワイルドカード: 文字「F」は任意のカタカナ一文字として使用可能です。</li>
                     <li>制限:同じワードは2回以上使えません。</li>
                     <li>重力: 文字を消去すると、その上の文字が下に落下します。</li>
@@ -47,26 +45,29 @@
                     <li>リセット: 消し方を間違えた場合、リセットボタンで最初の盤面に戻れます。</li>
                 </ul>
             </div>
+            
             <div class="mode-selection">
                 <div class="mode-card">
-                    
-                    <button id="btn-pokemon-mode">ポケモンケシマスを解く</button>
-                    <span id="pokemon-problem-count" class="problem-count-display">問題数: 0問</span>
+                    <button id="btn-country-mode">国名ケシマス</button>
+                    <span id="country-problem-count" class="problem-count-display">問題数: 0問</span>
+                </div>
+                
+                <div class="mode-card">
+                    <button id="btn-capital-mode">首都名ケシマス</button>
+                    <span id="capital-problem-count" class="problem-count-display">問題数: 0問</span>
                 </div>
 
                 <div class="mode-card">
-                    <h2></h2>
-                    <button id="btn-create-mode">問題を作る</button>
+                                        <button id="btn-create-mode">問題を作る</button>
                 </div>
 
                 <div class="mode-card">
-                    <h2></h2>
                     <button id="btn-ranking">ランキング</button>
                 </div>
             </div>
 
             <button id="btn-word-list" class="secondary-btn" style="margin-top: 20px;">
-                利用可能なポケモン一覧
+                利用可能な国名・首都名一覧
             </button>
             
             <div class="control-panel">
@@ -77,7 +78,7 @@
 
         <div id="main-game-screen" class="screen" style="display:none;">
             <div class="game-header">
-                <h2 id="current-game-title">ポケモンケシマス</h2>
+                <h2 id="current-game-title">国名ケシマス</h2>
                 <div class="game-info">
                     <span id="problem-number-display" class="info-tag">第 1 問</span>
                     <span id="creator-display" class="info-tag">制作者: 銀の焼き鳥</span>
@@ -105,7 +106,8 @@
             <div class="create-controls">
                 <label for="creation-mode-select">判定モード:</label>
                 <select id="creation-mode-select">
-                    <option value="pokemon">ポケモンケシマス</option>
+                    <option value="country">国名ケシマス</option>
+                    <option value="capital">首都名ケシマス</option>
                 </select>
                 <button id="btn-input-complete" disabled>入力完了 & 解答開始</button>
             </div>
@@ -121,7 +123,8 @@
             <h2>ランキング</h2>
             <div id="ranking-tabs">
                 <button data-type="total">総合</button>
-                <button data-type="pokemon">ポケモン</button>
+                <button data-type="country">国名</button>
+                <button data-type="capital">首都名</button>
             </div>
             <p id="ranking-nickname-display">あなたの記録: ゲスト</p>
             <div id="ranking-list-container">
@@ -131,10 +134,11 @@
 
         <div id="word-list-screen" class="screen" style="display:none;">
             <h2>利用可能ワード一覧</h2>
-            <p class="word-list-note">（サーバーから取得したポケモンが表示されます）</p>
+            <p class="word-list-note">（サーバーから取得した国名/首都名が表示されます）</p>
 
             <div id="word-list-tabs">
-                <button data-type="pokemon" class="active">ポケモンリスト</button>
+                <button data-type="country" class="active">国名リスト</button>
+                <button data-type="capital">首都名リスト</button>
             </div>
 
             <div id="word-list-content" class="word-list-grid">
