@@ -3,13 +3,12 @@
 
 // ★★★ 🚨 要修正 ★★★
 // あなたのNode.jsサーバーの公開URLに置き換えてください。
-const API_BASE_URL = 'https://kokumei-keshimasu.onrender.com/api'; 
+const API_BASE_URL = 'https://pokemon-keshimasu.onrender.com/api'; 
 
 // --- 1. 定数と初期データ ---
 // ★修正: allPuzzlesにはサーバーレスポンス全体（{puzzles: [], cleared_ids: [], ...}）を格納する★
-let allPuzzles = { country: {}, capital: {} }; 
-let COUNTRY_DICT = [];
-let CAPITAL_DICT = []; 
+let allPuzzles = { pokemon: {}}; 
+let POKEMON_DICT = [];
 let boardData = []; 
 let initialPlayData = []; 
 let selectedCells = []; 
@@ -23,8 +22,7 @@ let currentPlayerNickname = null; // 認証前はnull
 let currentPlayerId = null; 
 // ★修正: playerStatsを定義。ホーム画面のクリア数表示はこれを参照する ★
 let playerStats = { 
-    country_clears: 0,
-    capital_clears: 0
+    pokemon_clears: 0,
 };
 
 
@@ -102,7 +100,7 @@ function markPuzzleAsCleared(mode, puzzleId) {
  * ★修正: API呼び出し時にplayerIdを渡すように変更し、レスポンスオブジェクト全体をallPuzzlesに格納する★
  */
 async function loadPuzzlesAndWords() {
-    const modeList = ['country', 'capital'];
+    const modeList = ['pokemon'];
     const playerId = currentPlayerId;
     
     try {
@@ -126,13 +124,10 @@ async function loadPuzzlesAndWords() {
         }
         
         // 2. 辞書データの取得
-        const countryWordsRes = await fetch(`${API_BASE_URL}/words/country`);
-        const capitalWordsRes = await fetch(`${API_BASE_URL}/words/capital`);
+        const pokemonWordsRes = await fetch(`${API_BASE_URL}/words/pokemon`);
+        if (!pokemonWordsRes.ok) throw new Error("辞書リストの取得に失敗");
 
-        if (!countryWordsRes.ok || !capitalWordsRes.ok) throw new Error("辞書リストの取得に失敗");
-
-        COUNTRY_DICT = await countryWordsRes.json();
-        CAPITAL_DICT = await capitalWordsRes.json();
+        POKEMON_DICT = await pokemon_words.json();
         
         updateHomeProblemCount();
         
@@ -300,8 +295,7 @@ async function setupPlayer() {
     
     // ゲストの場合の初期値設定
     if (currentPlayerNickname === 'ゲスト' || !currentPlayerNickname) {
-        playerStats.country_clears = getClearedPuzzles('country').length;
-        playerStats.capital_clears = getClearedPuzzles('capital').length;
+        playerStats.country_clears = getClearedPuzzles('pokemon').length;
     }
 
     if (currentPlayerId && currentPlayerNickname && currentPlayerNickname !== 'ゲスト') {
@@ -349,15 +343,11 @@ function showScreen(screenName) {
  */
 function updateHomeProblemCount() {
     // ★修正: allPuzzles.mode.puzzles が存在しない場合に備えてフォールバックを設ける★
-    const countryCount = allPuzzles.country.puzzles ? allPuzzles.country.puzzles.length : 0;
-    const capitalCount = allPuzzles.capital.puzzles ? allPuzzles.capital.puzzles.length : 0;
+    const countryCount = allPuzzles.pokemon.puzzles ? allPuzzles.pokemon.puzzles.length : 0;
     
     // ★修正: LocalStorageではなくplayerStats（サーバーの値）を参照する ★
-    const clearedCountryCount = playerStats.country_clears;
-    const clearedCapitalCount = playerStats.capital_clears;
-
-    document.getElementById('country-problem-count').textContent = `問題数: ${countryCount}問 (クリア済: ${clearedCountryCount})`;
-    document.getElementById('capital-problem-count').textContent = `問題数: ${capitalCount}問 (クリア済: ${clearedCapitalCount})`;
+    const clearedCountryCount = playerStats.pokemon_clears;
+    document.getElementById('pokemon-problem-count').textContent = `問題数: ${countryCount}問 (クリア済: ${clearedCountryCount})`;
 }
 
 /**
@@ -365,7 +355,7 @@ function updateHomeProblemCount() {
  * ★修正: problemListの参照を allPuzzles[mode].puzzles に変更し、フィルタリングを行う★
  */
 function startGame(isCountry, isCreation) {
-    const mode = isCountry ? 'country' : 'capital';
+    const mode = isCountry ? 'pokemon' : 'pokemon';
     // allPuzzles[mode] は { puzzles: [...], cleared_ids: [...], ... } のオブジェクト
     const allProblemData = allPuzzles[mode].puzzles || []; 
     
@@ -381,7 +371,7 @@ function startGame(isCountry, isCreation) {
             .filter(puzzle => !clearedIds.has(puzzle.id));
 
         if (availablePuzzles.length === 0) {
-            alert(`🎉 ${isCountry ? '国名' : '首都名'}ケシマスのすべての問題をクリアしました！`);
+            alert(`🎉 ${isCountry ? 'ポケモン' : '首都名'}ケシマスのすべての問題をクリアしました！`);
             showScreen('home');
             return;
         }
@@ -409,7 +399,7 @@ function startGame(isCountry, isCreation) {
     usedWords = [];
     eraseButton.disabled = true;
     
-    const modeName = isCountry ? '国名ケシマス' : '首都名ケシマス';
+    const modeName = isCountry ? 'ポケモンケシマス' : '首都名ケシマス';
     
     document.getElementById('current-game-title').textContent = modeName; 
     
@@ -531,8 +521,8 @@ async function checkGameStatus() {
     const totalChars = boardData.flat().filter(char => char !== '').length;
     
     if (totalChars === 0) {
-        const mode = isCountryMode ? 'country' : 'capital';
-        const modeName = isCountryMode ? '国名' : '首都名';
+        const mode = isCountryMode ? 'pokemon' : 'pokemon';
+        const modeName = isCountryMode ? 'ポケモン' : 'ポケモン';
         
         if (!isCreationPlay) {
             const problemDataList = allPuzzles[mode].puzzles || [];
@@ -682,7 +672,7 @@ eraseButton.addEventListener('click', async () => {
     let selectedWord = selectedWordChars.join(''); 
     let finalWord = ''; 
 
-    const mode = isCountryMode ? '国名' : '首都名';
+    const mode = isCountryMode ? 'ポケモン' : '首都名';
     
     if (selectedWord.includes('F')) {
         let tempWordChars = [...selectedWordChars]; 
@@ -754,7 +744,7 @@ resetBtn.addEventListener('click', () => {
         
     } else if (currentPuzzleIndex !== -1) {
         // ★修正: allPuzzles[mode].puzzles を参照する★
-        const problemDataList = isCountryMode ? allPuzzles.country.puzzles : allPuzzles.capital.puzzles;
+        const problemDataList = isCountryMode ? allPuzzles.pokemon.puzzles : allPuzzles.pokemon.puzzles;
         const selectedPuzzle = problemDataList[currentPuzzleIndex];
         
         initialPlayData = JSON.parse(JSON.stringify(selectedPuzzle.data));
@@ -820,8 +810,8 @@ function renderCreateBoard() {
             createBoardElement.appendChild(cell);
         }
     }
-    // 初期値は国名モードにする
-    document.getElementById('creation-mode-select').value = 'country';
+    // 初期値はポケモンモードにする
+    document.getElementById('creation-mode-select').value = 'pokemon';
 }
 
 
@@ -896,7 +886,7 @@ btnInputComplete.addEventListener('click', () => {
     });
 
     const modeSelect = document.getElementById('creation-mode-select');
-    const isCountry = modeSelect.value === 'country';
+    const isCountry = modeSelect.value === 'pokemon';
 
     initialPlayData = JSON.parse(JSON.stringify(newBoard));
     boardData = JSON.parse(JSON.stringify(newBoard));
@@ -914,7 +904,7 @@ async function fetchAndDisplayRanking(type) {
     container.innerHTML = `<div>${type}ランキングをサーバーから取得中...</div>`;
 
     const totalScore = playerStats.country_clears + playerStats.capital_clears;
-    document.getElementById('ranking-nickname-display').innerHTML = `あなたの記録: <strong>${currentPlayerNickname}</strong> (国名: ${playerStats.country_clears}, 首都名: ${playerStats.capital_clears}, 合計: ${totalScore})`;
+    document.getElementById('ranking-nickname-display').innerHTML = `あなたの記録: <strong>${currentPlayerNickname}</strong> (ポケモン: ${playerStats.country_clears}, 首都名: ${playerStats.capital_clears}, 合計: ${totalScore})`;
 
     try {
         const response = await fetch(`${API_BASE_URL}/rankings/${type}`);
@@ -923,7 +913,7 @@ async function fetchAndDisplayRanking(type) {
 
         const rankings = await response.json();
         
-        let html = `<h3>${type === 'total' ? '総合' : type === 'country' ? '国名' : '首都名'}ランキング</h3>`;
+        let html = `<h3>${type === 'total' ? '総合' : type === 'pokemon' ? 'ポケモン' : '首都名'}ランキング</h3>`;
         html += `<table class="ranking-table"><tr><th>順位</th><th>ニックネーム</th><th>クリア数</th></tr>`;
         
         rankings.forEach(item => {
@@ -944,7 +934,7 @@ async function fetchAndDisplayRanking(type) {
 // --- 5.5. ワードリスト表示ロジック ---
 
 function displayWordList(type) {
-    const dictionary = (type === 'country') ? COUNTRY_DICT : CAPITAL_DICT;
+    const dictionary = (type === 'pokemon') ? COUNTRY_DICT : CAPITAL_DICT;
     
     if (dictionary.length === 0) {
         wordListContent.innerHTML = `<p>辞書データがサーバーからロードされていません。</p>`;
@@ -1002,8 +992,7 @@ if (btnGuestPlay) {
         localStorage.removeItem('keshimasu_nickname');
         
         // ★修正: ゲストモード開始時にローカルのクリア数をplayerStatsに反映★
-        playerStats.country_clears = getClearedPuzzles('country').length; 
-        playerStats.capital_clears = getClearedPuzzles('capital').length; 
+        playerStats.pokemon_clears = getClearedPuzzles('pokemon').length; 
         
         alert("ゲストとしてゲームを開始します。スコアはランキングに保存されません。");
         await loadPuzzlesAndWords(); // 問題数更新のため
@@ -1022,11 +1011,8 @@ document.getElementById('btn-logout').addEventListener('click', () => {
 
 
 // ホーム画面リスナー
-document.getElementById('btn-country-mode').addEventListener('click', () => {
+document.getElementById('btn-pokemon-mode').addEventListener('click', () => {
     startGame(true, false); 
-});
-document.getElementById('btn-capital-mode').addEventListener('click', () => {
-    startGame(false, false); 
 });
 document.getElementById('btn-create-mode').addEventListener('click', () => {
     if (!currentPlayerNickname || currentPlayerNickname === 'ゲスト') {
@@ -1053,7 +1039,7 @@ rankingTabs.addEventListener('click', (event) => {
 // ワードリストボタンのリスナー
 document.getElementById('btn-word-list').addEventListener('click', () => {
     showScreen('wordList');
-    displayWordList('country'); 
+    displayWordList('pokemon'); 
 });
 wordListTabs.addEventListener('click', (event) => {
     if (event.target.tagName === 'BUTTON') {
