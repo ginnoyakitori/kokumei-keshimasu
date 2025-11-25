@@ -1,31 +1,34 @@
-// keshimasu-client/script.js (修正版)
+// keshimasu-client/script.js (最終統合版)
 // ----------------------------------------------------
 
 // ★★★ 🚨 要修正 ★★★
 // あなたのNode.jsサーバーの公開URLに置き換えてください。
+// ローカルでテストする場合は 'http://localhost:3000/api' などに変更
 const API_BASE_URL = 'https://kokumei-keshimasu.onrender.com/api'; 
 
 // --- 1. 定数と初期データ ---
-// ★修正: allPuzzlesにはサーバーレスポンス全体（{puzzles: [], cleared_ids: [], ...}）を格納する★
-let allPuzzles = { country: {}, capital: {}}; 
-let country_DICT = [];
-let CAPITAL_DICT = [];
+// allPuzzlesにはサーバーレスポンス全体（{puzzles: [], cleared_ids: [], ...}）を格納する
+let allPuzzles = { country: {}, capital: {} }; 
+let COUNTRY_DICT = [];
+let CAPITAL_DICT = []; 
 let boardData = []; 
 let initialPlayData = []; 
 let selectedCells = []; 
 let usedWords = [];     
 let isCountryMode = true; 
-let isCapitalMode = false;
 let isCreationPlay = false; 
 let currentDictionary = [];
 let currentPuzzleIndex = -1; 
 
+// IME入力中かどうかを判定するフラグ（作問モード用）
+let isComposing = false;
+
 let currentPlayerNickname = null; // 認証前はnull
 let currentPlayerId = null; 
-// ★修正: playerStatsを定義。ホーム画面のクリア数表示はこれを参照する ★
+// playerStatsを定義。ホーム画面のクリア数表示はこれを参照する
 let playerStats = { 
     country_clears: 0,
-    capital_clears: 0
+    capital_clears: 0
 };
 
 
@@ -74,10 +77,9 @@ function isValidGameChar(char) {
 
 /**
  * LocalStorageからクリアした問題のIDリストを取得する
- * ★修正: サーバーから取得できなかった場合（allPuzzles[mode]にデータがない場合）のフォールバックとして使用する★
+ * (サーバーから取得できなかった場合のフォールバックとして使用)
  */
 function getClearedPuzzles(mode) {
-    // プレイヤーごとにIDリストを管理するため、IDを含めたキーを使用
     const key = `cleared_puzzles_${mode}_id_${currentPlayerId || 'guest'}`;
     const cleared = localStorage.getItem(key);
     return cleared ? JSON.parse(cleared) : [];
@@ -85,7 +87,6 @@ function getClearedPuzzles(mode) {
 
 /**
  * LocalStorageにクリアした問題のIDを記録する
- * (ログインユーザーの場合は、これは主にサーバー同期前の安全策として使用される)
  */
 function markPuzzleAsCleared(mode, puzzleId) {
     const key = `cleared_puzzles_${mode}_id_${currentPlayerId || 'guest'}`;
@@ -100,7 +101,6 @@ function markPuzzleAsCleared(mode, puzzleId) {
 
 /**
  * サーバーから問題リストを動的にロードする関数
- * ★修正: API呼び出し時にplayerIdを渡すように変更し、レスポンスオブジェクト全体をallPuzzlesに格納する★
  */
 async function loadPuzzlesAndWords() {
     const modeList = ['country', 'capital'];
@@ -116,7 +116,7 @@ async function loadPuzzlesAndWords() {
             
             const data = await res.json();
             
-            // ★修正: レスポンスオブジェクト全体を格納（puzzles, cleared_ids, player_identifiedを含む）★
+            // レスポンスオブジェクト全体を格納（puzzles, cleared_ids, player_identifiedを含む）
             allPuzzles[mode] = data; 
             
             // ログイン済みの場合、サーバーの最新クリア済みIDをLocalStorageに上書き同期
@@ -128,10 +128,9 @@ async function loadPuzzlesAndWords() {
         
         // 2. 辞書データの取得
         const countryWordsRes = await fetch(`${API_BASE_URL}/words/country`);
-        if (!countryWordsRes.ok) throw new Error("辞書リストの取得に失敗");
-
         const capitalWordsRes = await fetch(`${API_BASE_URL}/words/capital`);
-        if (!capitalWordsRes.ok) throw new Error("辞書リストの取得に失敗");
+
+        if (!countryWordsRes.ok || !capitalWordsRes.ok) throw new Error("辞書リストの取得に失敗");
 
         COUNTRY_DICT = await countryWordsRes.json();
         CAPITAL_DICT = await capitalWordsRes.json();
@@ -139,7 +138,7 @@ async function loadPuzzlesAndWords() {
         updateHomeProblemCount();
         
     } catch (error) {
-        console.error("問題または辞書のロードに失敗しました。サーバーが起動しているか確認してください。", error);
+        console.error("問題または辞書のロードに失敗しました。", error);
         if (currentPlayerNickname === 'ゲスト' || !currentPlayerNickname) {
             alert("サーバーから問題データをロードできませんでした。API_BASE_URLが正しいか確認してください。");
         }
@@ -164,14 +163,13 @@ async function getPlayerStatus(id) {
         }
         
         const data = await response.json();
-        const player = data.player; // 読みやすくするために変数に格納
+        const player = data.player;
 
-        // ★修正: playerStatsを最新のクリア数で更新 ★
+        // playerStatsを最新のクリア数で更新
         playerStats.country_clears = player.country_clears;
         playerStats.capital_clears = player.capital_clears;
         
-        // ★修正: LocalStorageをサーバーデータで上書き ★
-        // サーバー側で cleared_country_ids が返されるようになったため、ここで同期する
+        // LocalStorageをサーバーデータで上書き
         if (player.cleared_country_ids) {
             const countryKey = `cleared_puzzles_country_id_${id}`;
             localStorage.setItem(countryKey, JSON.stringify(player.cleared_country_ids));
@@ -192,7 +190,7 @@ async function getPlayerStatus(id) {
 function setPlayerSession(playerData) {
     currentPlayerNickname = playerData.nickname;
     currentPlayerId = playerData.id; 
-    // ★修正: playerStatsを最新のクリア数で更新 ★
+    // playerStatsを最新のクリア数で更新
     playerStats.country_clears = playerData.country_clears;
     playerStats.capital_clears = playerData.capital_clears;
     
@@ -201,7 +199,7 @@ function setPlayerSession(playerData) {
 }
 
 /**
- * ログイン処理 (既存ユーザーの認証)
+ * ログイン処理
  */
 async function attemptLogin(nickname, passcode) {
     if (!nickname || nickname.trim() === "" || !passcode || passcode.trim() === "") {
@@ -209,7 +207,7 @@ async function attemptLogin(nickname, passcode) {
         return false;
     }
 
-    const finalName = nickname.trim().slice(0, 10);
+    const finalName = nickname.trim().slice(0, 20); // 20文字制限
 
     try {
         const response = await fetch(`${API_BASE_URL}/player/register`, {
@@ -230,9 +228,7 @@ async function attemptLogin(nickname, passcode) {
              return false;
         }
         
-        // ログイン成功
         setPlayerSession(data.player);
-        // ログイン時はサーバーの最新クリア数とIDリストを同期する
         await getPlayerStatus(currentPlayerId); 
         
         alert(`${finalName}さん、ログイン成功です！`);
@@ -249,7 +245,7 @@ async function attemptLogin(nickname, passcode) {
 
 
 /**
- * 新規登録処理 (新規ユーザーの登録)
+ * 新規登録処理
  */
 async function attemptRegister(nickname, passcode) {
     if (!nickname || nickname.trim() === "" || !passcode || passcode.trim() === "") {
@@ -257,7 +253,7 @@ async function attemptRegister(nickname, passcode) {
         return false;
     }
 
-    const finalName = nickname.trim().slice(0, 10);
+    const finalName = nickname.trim().slice(0, 20); // 20文字制限
 
     try {
         const response = await fetch(`${API_BASE_URL}/player/register`, {
@@ -278,9 +274,8 @@ async function attemptRegister(nickname, passcode) {
              return false;
         }
         
-        // 新規登録成功
         setPlayerSession(data.player);
-        await getPlayerStatus(currentPlayerId); // 新規登録時もサーバーからIDリスト（空）を取得
+        await getPlayerStatus(currentPlayerId); 
         alert(`${finalName}さん、新規登録成功です！`);
         await loadPuzzlesAndWords();
         showScreen('home');
@@ -294,7 +289,7 @@ async function attemptRegister(nickname, passcode) {
 }
 
 /**
- * ページロード時に認証状態をチェックし、認証画面を表示する
+ * アプリ初期化：認証状態のチェック
  */
 async function setupPlayer() {
     currentPlayerId = localStorage.getItem('player_id');
@@ -303,6 +298,7 @@ async function setupPlayer() {
     // ゲストの場合の初期値設定
     if (currentPlayerNickname === 'ゲスト' || !currentPlayerNickname) {
         playerStats.country_clears = getClearedPuzzles('country').length;
+        playerStats.capital_clears = getClearedPuzzles('capital').length;
     }
 
     if (currentPlayerId && currentPlayerNickname && currentPlayerNickname !== 'ゲスト') {
@@ -314,7 +310,6 @@ async function setupPlayer() {
             return;
         }
         
-        // プレイヤー情報がサーバーで見つからなかった場合、ローカルストレージをクリアしてゲスト状態へ
         currentPlayerId = null;
         currentPlayerNickname = null;
         localStorage.removeItem('player_id');
@@ -328,9 +323,6 @@ async function setupPlayer() {
 
 // --- 2. 画面表示と初期化 ---
 
-/**
- * 画面を表示し、メインタイトルの表示を制御する
- */
 function showScreen(screenName) {
     Object.keys(screens).forEach(key => {
         screens[key].style.display = (key === screenName) ? 'block' : 'none';
@@ -345,36 +337,30 @@ function showScreen(screenName) {
     }
 }
 
-/**
- * ホーム画面に問題数を表示する
- */
 function updateHomeProblemCount() {
-    // ★修正: allPuzzles.mode.puzzles が存在しない場合に備えてフォールバックを設ける★
+    // allPuzzles.mode.puzzles が存在しない場合に備えてフォールバックを設ける
     const countryCount = allPuzzles.country.puzzles ? allPuzzles.country.puzzles.length : 0;
     const capitalCount = allPuzzles.capital.puzzles ? allPuzzles.capital.puzzles.length : 0;
     
-    // ★修正: LocalStorageではなくplayerStats（サーバーの値）を参照する ★
+    // LocalStorageではなくplayerStats（サーバーの値）を参照する
     const clearedCountryCount = playerStats.country_clears;
     const clearedCapitalCount = playerStats.capital_clears;
+
     document.getElementById('country-problem-count').textContent = `問題数: ${countryCount}問 (クリア済: ${clearedCountryCount})`;
-    document.getElementById('capital-problem-count').textContent = `問題数: ${capitalCount}問 (クリア済: ${clearedCapitalCount})`;
+    document.getElementById('capital-problem-count').textContent = `問題数: ${capitalCount}問 (クリア済: ${clearedCapitalCount})`;
 }
 
 /**
- * ゲームの開始。未クリアの問題の中からインデックスが最も小さいものを選択する。
- * ★修正: problemListの参照を allPuzzles[mode].puzzles に変更し、フィルタリングを行う★
+ * ゲームの開始
  */
 function startGame(isCountry, isCreation) {
     const mode = isCountry ? 'country' : 'capital';
-    // allPuzzles[mode] は { puzzles: [...], cleared_ids: [...], ... } のオブジェクト
     const allProblemData = allPuzzles[mode].puzzles || []; 
     
-    // 問題リストをIDの昇順でソートし、出題順を固定する
     allProblemData.sort((a, b) => a.id - b.id);
     
-    // 制作モードではない場合のみ、問題選択ロジックを実行
     if (!isCreation) {
-        // ★修正: サーバーから取得した最新の cleared_ids を使用する★
+        // サーバーから取得した cleared_ids を使用して未クリア問題をフィルタリング
         const clearedIds = new Set(allPuzzles[mode].cleared_ids || []); 
         
         const availablePuzzles = allProblemData
@@ -388,13 +374,13 @@ function startGame(isCountry, isCreation) {
 
         const selectedPuzzle = availablePuzzles[0];
         
-        // ★修正: サーバーから取得した全リスト (allProblemData) からインデックスを取得する★
+        // 現在の問題のインデックスを取得
         currentPuzzleIndex = allProblemData.findIndex(p => p.id === selectedPuzzle.id);
         
         initialPlayData = JSON.parse(JSON.stringify(selectedPuzzle.data));
         boardData = JSON.parse(JSON.stringify(selectedPuzzle.data));
         
-        const nextProblemNumber = playerStats[mode + '_clears'] + 1; // ★修正: playerStatsから次の問題番号を決定 ★
+        const nextProblemNumber = playerStats[mode + '_clears'] + 1; 
         document.getElementById('problem-number-display').textContent = `第 ${nextProblemNumber} 問`;
         
     } else {
@@ -417,7 +403,6 @@ function startGame(isCountry, isCreation) {
     if (isCreation) {
         creatorName = currentPlayerNickname;
     } else if (currentPuzzleIndex !== -1) {
-        // ★修正: allProblemDataから制作者名を参照する★
         creatorName = allProblemData[currentPuzzleIndex].creator; 
     }
     document.getElementById('creator-display').textContent = `制作者: ${creatorName}`;
@@ -463,7 +448,6 @@ function updateStatusDisplay() {
 
 /**
  * プレイヤーのスコアとクリア済みIDをサーバーに更新する
- * サーバーから更新後の最新スコアを返す (server.jsで修正済みと仮定)
  */
 async function updatePlayerScore(mode, puzzleId) { 
     if (!currentPlayerId || isCreationPlay) {
@@ -485,8 +469,7 @@ async function updatePlayerScore(mode, puzzleId) {
 
         const data = await response.json();
         
-        // ★修正: サーバーから返された最新スコアでplayerStatsを更新 ★
-        // これで次の alert の際に正しい値が表示される
+        // サーバーから返された最新スコアでplayerStatsを直ちに更新
         playerStats[mode + '_clears'] = data.newScore;
         
     } catch (error) {
@@ -525,7 +508,6 @@ async function submitNewPuzzle(mode, boardData, creator) {
 
 /**
  * ゲームクリア時にスコア更新、通知、画面更新を行う
- * ★★★ 修正のコア部分 (問題制作モードのクリア後の処理) ★★★
  */
 async function checkGameStatus() { 
     const totalChars = boardData.flat().filter(char => char !== '').length;
@@ -540,10 +522,9 @@ async function checkGameStatus() {
             const currentPuzzle = problemDataList.find(p => JSON.stringify(p.data) === JSON.stringify(initialPlayData)); 
 
             if (currentPuzzle && currentPuzzle.id) {
-                markPuzzleAsCleared(mode, currentPuzzle.id); // ゲストモード用のローカル保存
+                markPuzzleAsCleared(mode, currentPuzzle.id); 
                 
                 // 1. スコア更新を待ち、playerStatsを最新値にする
-                // ゲスト/未ログインの場合は、ローカルのクリア数を更新する
                 if (currentPlayerId) {
                     await updatePlayerScore(mode, currentPuzzle.id); 
                 } else {
@@ -568,15 +549,13 @@ async function checkGameStatus() {
                 showScreen('home'); // 登録した場合はホームに戻る
             } else {
                 alert("問題の登録をスキップしました。作成画面に戻ります。");
-                // ★★★ 修正箇所 ★★★
-                // 登録をスキップした場合、問題作成画面に戻す
+                
+                // 登録スキップ時は、作成画面に戻して再編集可能にする
                 showScreen('create'); 
-                renderCreateBoard(); // 盤面入力UIを再描画
-                // 元の盤面データ(initialPlayData)で入力フィールドを埋める (任意)
-                fillCreateBoard(initialPlayData); 
+                renderCreateBoard(); 
+                fillCreateBoard(initialPlayData); // 元の入力データを復元
                 btnInputComplete.disabled = false;
                 document.getElementById('create-status').textContent = '入力完了！解答を開始できます。';
-                // 問題モードの選択をクリア時のモードに合わせる
                 document.getElementById('creation-mode-select').value = mode; 
             }
         }
@@ -753,7 +732,7 @@ resetBtn.addEventListener('click', () => {
         document.getElementById('create-status').textContent = '入力完了！解答を開始できます。';
         
     } else if (currentPuzzleIndex !== -1) {
-        // ★修正: allPuzzles[mode].puzzles を参照する★
+        // allPuzzles[mode].puzzles を参照する
         const problemDataList = isCountryMode ? allPuzzles.country.puzzles : allPuzzles.capital.puzzles;
         const selectedPuzzle = problemDataList[currentPuzzleIndex];
         
@@ -768,10 +747,8 @@ resetBtn.addEventListener('click', () => {
     }
 });
 
-// --- 4. 問題制作モードのロジック ---
 
-// ★追加: IME入力中フラグ★
-let isComposing = false; 
+// --- 4. 問題制作モードのロジック ---
 
 function renderCreateBoard() { 
     createBoardElement.innerHTML = '';
@@ -788,31 +765,27 @@ function renderCreateBoard() {
             input.dataset.r = r;
             input.dataset.c = c;
           
-           // --- 修正: フリック入力・濁音対応 ---
-           // IME入力開始時
+           // --- フリック入力・濁音対応（IME制御） ---
            input.addEventListener('compositionstart', () => {
                isComposing = true;
            });
 
-           // IME入力確定時
            input.addEventListener('compositionend', (e) => {
                isComposing = false;
                // 確定後、即座にチェックを実行
                checkCreationInput(e); 
            });
            
-           // 通常のキーボード入力やペースト時の処理 (compositionend/blurが発火しない場合)
            input.addEventListener('input', (e) => {
                // IME入力中でなければ、すぐにチェック
                if (!isComposing) {
                    checkCreationInput(e);
                }
-               // ★重要: IME入力中は文字を確定させないため、ここでは何もしない★
            });
            
            // フォーカスが外れたとき（濁音などが確定する）
            input.addEventListener('blur', (e) => {
-               isComposing = false; // フォーカスが外れたらIMEを強制終了
+               isComposing = false; 
                checkCreationInput(e);
            });
             
@@ -820,12 +793,11 @@ function renderCreateBoard() {
             createBoardElement.appendChild(cell);
         }
     }
-    // 初期値はポケモンモードにする
+    // 初期値は国名モードにする
     document.getElementById('creation-mode-select').value = 'country';
 }
 
-
-// 新しいヘルパー関数: 2次元配列のデータを制作ボードのinputに設定する
+// ヘルパー関数: 2次元配列のデータを制作ボードのinputに設定する
 function fillCreateBoard(data) {
     if (!data || data.length === 0) return;
     const inputs = document.querySelectorAll('.create-input');
@@ -838,51 +810,41 @@ function fillCreateBoard(data) {
     });
     checkCreationInput(); // 埋めた後にステータスを更新
 }
-function checkCreationInput(event) {
-    let shouldUpdateAll = true; // 全体の盤面ステータスを更新するかどうか
 
-    if (event && event.target) {
-        let input = event.target;
-        let value = input.value;
+function checkCreationInput(event) {
+    if (event && event.target) {
+        let input = event.target;
+        let value = input.value;
         
-        // ★修正: IME確定後、またはblur時（isComposingがfalseの時）のみ、文字のチェックと変換を行う★
-        // これにより、フリック入力中の文字が未確定の状態で変換されるのを防ぐ
+        // IME確定後、またはblur時（isComposingがfalseの時）のみ、文字のチェックと変換を行う
         if (event.type === 'compositionend' || event.type === 'blur' || !isComposing) {
-            
             value = value.toUpperCase();
             value = toKatakana(value);
 
             // Fの入力を許容
             if (value.length > 0 && !isValidGameChar(value) && value !== 'F') { 
-                value = ''; // 無効な文字はクリア
-                shouldUpdateAll = false; // 入力値が無効な場合はステータス更新をスキップ
+                value = ''; 
             }
-
             input.value = value.slice(0, 1);
-        } else {
-             // IME入力中（compositionstart後）のinputイベントは無視し、盤面全体の状態更新のみ行う
-             shouldUpdateAll = false;
         }
-    }
+    }
 
-    // 全ての input の状態をチェックし、完了ボタンの有効/無効を切り替える
-    // この部分は、単一の input のイベントだけでなく、fillCreateBoardからも呼ばれるため、常に実行
-    const inputs = document.querySelectorAll('.create-input');
-    let filledCount = 0;
-    
-    inputs.forEach(input => {
-        if (input.value.length === 1 && (isValidGameChar(input.value) || input.value === 'F')) {
-            filledCount++;
-        }
-    });
+    const inputs = document.querySelectorAll('.create-input');
+    let filledCount = 0;
+    
+    inputs.forEach(input => {
+        if (input.value.length === 1 && (isValidGameChar(input.value) || input.value === 'F')) {
+            filledCount++;
+        }
+    });
 
-    if (filledCount === 40) {
-        btnInputComplete.disabled = false;
-        document.getElementById('create-status').textContent = '入力完了！解答を開始できます。';
-    } else {
-        btnInputComplete.disabled = true;
-        document.getElementById('create-status').textContent = `残り${40 - filledCount}マスに入力が必要です。`;
-    }
+    if (filledCount === 40) {
+        btnInputComplete.disabled = false;
+        document.getElementById('create-status').textContent = '入力完了！解答を開始できます。';
+    } else {
+        btnInputComplete.disabled = true;
+        document.getElementById('create-status').textContent = `残り${40 - filledCount}マスに入力が必要です。`;
+    }
 }
 
 btnInputComplete.addEventListener('click', () => {
@@ -914,7 +876,7 @@ async function fetchAndDisplayRanking(type) {
     container.innerHTML = `<div>${type}ランキングをサーバーから取得中...</div>`;
 
     const totalScore = playerStats.country_clears + playerStats.capital_clears;
-    document.getElementById('ranking-nickname-display').innerHTML = `あなたの記録: <strong>${currentPlayerNickname}</strong> (ポケモン: ${playerStats.country_clears}, 首都名: ${playerStats.capital_clears}, 合計: ${totalScore})`;
+    document.getElementById('ranking-nickname-display').innerHTML = `あなたの記録: <strong>${currentPlayerNickname}</strong> (国名: ${playerStats.country_clears}, 首都名: ${playerStats.capital_clears}, 合計: ${totalScore})`;
 
     try {
         const response = await fetch(`${API_BASE_URL}/rankings/${type}`);
@@ -923,7 +885,7 @@ async function fetchAndDisplayRanking(type) {
 
         const rankings = await response.json();
         
-        let html = `<h3>${type === 'total' ? '総合' : type === 'country' ? 'ポケモン' : '首都名'}ランキング</h3>`;
+        let html = `<h3>${type === 'total' ? '総合' : type === 'country' ? '国名' : '首都名'}ランキング</h3>`;
         html += `<table class="ranking-table"><tr><th>順位</th><th>ニックネーム</th><th>クリア数</th></tr>`;
         
         rankings.forEach(item => {
@@ -977,6 +939,18 @@ function displayWordList(type) {
 
 // --- 6. イベントリスナーの設定 ---
 
+// 日本語入力時でもリアルタイムでmaxlengthを強制する関数
+function enforceMaxLength(elementId, maxLength) {
+    const inputElement = document.getElementById(elementId);
+    if (inputElement) {
+        inputElement.addEventListener('input', function() {
+            if (this.value.length > maxLength) {
+                this.value = this.value.substring(0, maxLength);
+            }
+        });
+    }
+}
+
 if (btnLoginSubmit) {
     btnLoginSubmit.addEventListener('click', () => {
         attemptLogin(inputNickname.value, inputPasscode.value);
@@ -1001,11 +975,12 @@ if (btnGuestPlay) {
         localStorage.removeItem('player_id');
         localStorage.removeItem('keshimasu_nickname');
         
-        // ★修正: ゲストモード開始時にローカルのクリア数をplayerStatsに反映★
+        // ゲストモード開始時にローカルのクリア数をplayerStatsに反映
         playerStats.country_clears = getClearedPuzzles('country').length; 
+        playerStats.capital_clears = getClearedPuzzles('capital').length; 
         
         alert("ゲストとしてゲームを開始します。スコアはランキングに保存されません。");
-        await loadPuzzlesAndWords(); // 問題数更新のため
+        await loadPuzzlesAndWords(); 
         showScreen('home');
     });
 }
@@ -1076,4 +1051,9 @@ document.getElementById('btn-word-list-back').addEventListener('click', () => {
 
 
 // --- 7. 初期化 ---
+// ニックネーム入力の制限を適用
+document.addEventListener('DOMContentLoaded', () => {
+    enforceMaxLength('nickname-input', 20); 
+});
+
 setupPlayer();
