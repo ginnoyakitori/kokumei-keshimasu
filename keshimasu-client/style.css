@@ -1,361 +1,126 @@
-/* --- ベーススタイル --- */
-:root {
-    --bg-color: #202124;
-    --text-color: #ffffff;
-    --accent-color: #FFD700; /* ゴールド */
-    --secondary-color: #5f6368;
-    --cell-bg: #303134;
-    --cell-selected: #FFD700;
-    --cell-selected-text: #202124;
-    --input-bg: #444;
-    --danger-color: #e53935;
-    --success-color: #43a047;
-}
-
+/* ----------------------------------------------------
+ * フロントエンド CSS コード - style.css
+ * ---------------------------------------------------- */
 body {
-    background-color: var(--bg-color);
-    color: var(--text-color);
-    font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
-    margin: 0;
+    font-family: Arial, sans-serif;
+    background-color: #f4f4f4;
+    color: #333;
     padding: 0;
-    /* モバイルでのタップ遅延を防止 */
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
+    margin: 0;
 }
 
-#app-container {
-    max-width: 500px;
-    margin: 0 auto;
+#game-container {
+    max-width: 800px; /* 最大幅を指定 */
+    margin: 20px auto; /* 上下20px、左右中央揃え */
     padding: 20px;
-    box-sizing: border-box;
+    border: 1px solid #ccc;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    background-color: #fff;
     text-align: center;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
 }
 
-h1, h2, h3 {
-    margin: 10px 0;
+h1 {
+    color: #007bff;
+    border-bottom: 2px solid #007bff;
+    padding-bottom: 10px;
 }
 
-#app-title {
-    color: var(--accent-color);
-    letter-spacing: 2px;
-    margin-bottom: 20px;
-}
-
-/* --- 画面制御 --- */
-.screen {
-    /* JSで display: block に切り替える */
-    animation: fadeIn 0.3s ease-in-out;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-/* --- 認証画面 (ログイン/登録) --- */
-.auth-form {
-    background: #333;
-    padding: 30px;
-    border-radius: 12px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-}
-
-.auth-form input {
-    padding: 12px;
-    border-radius: 6px;
-    border: 1px solid #555;
-    background: var(--input-bg);
-    color: white;
-    font-size: 16px; /* iOSでズームしないサイズ */
-}
-
-.auth-button-group {
-    display: flex;
-    gap: 10px;
-}
-
-.auth-btn {
-    flex: 1;
-    padding: 12px;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-weight: bold;
-    font-size: 1rem;
-    transition: opacity 0.2s;
-}
-
-.login-btn {
-    background-color: var(--accent-color);
-    color: var(--cell-selected-text);
-}
-
-.signup-btn {
-    background-color: var(--secondary-color);
-    color: white;
-}
-
-.switch-link {
-    background: none;
-    border: none;
-    color: #aaa;
-    text-decoration: underline;
-    cursor: pointer;
-    margin-top: 10px;
-    font-size: 0.9rem;
-}
-
-/* --- ホーム画面 --- */
-.game-rules {
-    text-align: left;
-    background: #333;
-    padding: 15px;
-    border-radius: 8px;
-    margin-bottom: 20px;
-    font-size: 0.9rem;
-    line-height: 1.5;
-}
-
-.rule-list {
-    padding-left: 20px;
-    margin: 10px 0;
-}
-
-.rule-list li {
-    margin-bottom: 5px;
-}
-
-.mode-selection {
-    display: grid;
-    gap: 15px;
-}
-
-.mode-card {
-    background: #303134;
-    padding: 15px;
-    border-radius: 10px;
-    border: 1px solid #444;
-}
-
-.mode-card button {
-    width: 100%;
-    padding: 15px;
-    font-size: 1.1rem;
-    background: var(--accent-color);
-    color: var(--cell-selected-text);
-    border: none;
-    border-radius: 8px;
-    font-weight: bold;
-    cursor: pointer;
-}
-
-.problem-count-display {
+/* --- ボタンとホーム画面 --- */
+#home-screen button, #controls button, #ranking-tabs button {
     display: block;
-    margin-top: 8px;
-    font-size: 0.85rem;
-    color: #ccc;
+    width: 80%;
+    margin: 15px auto;
+    padding: 15px 20px;
+    font-size: 1.2em;
+    cursor: pointer;
+    border: none;
+    border-radius: 5px;
+    background-color: #28a745;
+    color: white;
+    transition: background-color 0.2s;
 }
 
-/* --- ゲーム盤面 (8行 x 5列) --- */
-.board-grid {
+#home-screen button:hover, #controls button:hover, #ranking-tabs button:hover {
+    background-color: #1e7e34;
+}
+
+#ranking-tabs button {
+    display: inline-block;
+    width: 30%;
+    padding: 10px;
+    margin: 5px;
+    background-color: #007bff;
+}
+
+#ranking-tabs button:hover {
+    background-color: #0056b3;
+}
+
+/* --- 盤面グリッド --- */
+.board-grid, .create-grid {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    /* 8行分、アスペクト比を維持して自動計算 */
-    gap: 4px;
-    margin: 20px auto;
-    width: 100%;
-    max-width: 350px; /* PCで大きすぎないように */
+    /* 5列、最小60pxで柔軟な幅を設定 */
+    grid-template-columns: repeat(5, minmax(60px, 1fr)); 
+    gap: 5px; 
+    margin: 20px auto; 
+    max-width: 325px; /* 5セル * 60px + 4ギャップ * 5px = 320px + α */
+    border: 1px solid #ddd;
+    padding: 5px;
+    background-color: #eee;
 }
 
-.cell {
-    aspect-ratio: 1 / 1;
-    background-color: var(--cell-bg);
-    border-radius: 4px;
+.cell, .create-cell {
+    width: 60px;  /* セルの固定幅 */
+    height: 60px; /* セルの高さ */
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 1.5rem;
+    font-size: 2em;
     font-weight: bold;
+    border: 1px solid #aaa;
+    background-color: #fff;
     cursor: pointer;
     user-select: none;
-    transition: background-color 0.1s, transform 0.1s;
-    position: relative;
+    transition: background-color 0.1s;
+}
+
+.cell:hover:not(.selected):not(.empty) {
+    background-color: #f0f0ff;
 }
 
 .cell.selected {
-    background-color: var(--cell-selected);
-    color: var(--cell-selected-text);
-    transform: scale(0.95);
-    box-shadow: 0 0 8px var(--accent-color);
-    z-index: 10;
+    background-color: #ffc107; /* 選択中の色 */
 }
 
 .cell.empty {
-    background-color: transparent;
-    border: 1px dashed #444;
+    background-color: #ddd;
     cursor: default;
-}
-
-/* --- コントロールパネル --- */
-.control-panel, .status-panel {
-    margin-top: 15px;
-    display: flex;
-    justify-content: center;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-button {
-    padding: 10px 20px;
-    border-radius: 20px;
-    border: none;
-    cursor: pointer;
-    font-size: 1rem;
-    font-weight: bold;
-    transition: 0.2s;
-}
-
-#erase-button {
-    background-color: var(--danger-color);
-    color: white;
-    flex-grow: 1;
-    max-width: 200px;
-}
-
-#erase-button:disabled {
-    background-color: #555;
-    color: #888;
-    cursor: not-allowed;
-}
-
-.secondary-btn {
-    background-color: var(--secondary-color);
-    color: white;
-}
-
-.info-tag {
-    background: #444;
-    padding: 4px 10px;
-    border-radius: 15px;
-    font-size: 0.8rem;
-    margin: 0 5px;
+    border-color: #ccc;
 }
 
 /* --- 問題制作モード --- */
-.create-controls {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 10px;
-}
-
-.create-controls select {
-    padding: 8px;
-    border-radius: 4px;
-    background: #fff;
-    color: #333;
-}
-
-#btn-input-complete {
-    background-color: var(--success-color);
-    color: white;
-}
-
-#btn-input-complete:disabled {
-    background-color: #444;
-    color: #888;
-}
-
-/* 制作モードのセル */
-.create-cell {
-    aspect-ratio: 1 / 1;
-    background-color: var(--input-bg);
-    border-radius: 4px;
-    padding: 2px;
-}
-
 .create-input {
-    width: 100%;
-    height: 100%;
-    background: transparent;
-    border: none;
-    color: white;
-    font-size: 1.5rem;
+    width: 50px; 
+    height: 50px; 
     text-align: center;
-    font-weight: bold;
-    padding: 0;
-    margin: 0;
+    font-size: 1.3em; 
+    border: none;
     outline: none;
-}
-.create-input:focus {
-    background: #555;
-}
-
-/* --- ランキング・ワードリスト画面 --- */
-#ranking-tabs, #word-list-tabs {
-    display: flex;
-    margin-bottom: 15px;
-    border-bottom: 1px solid #444;
+    background-color: transparent;
+    text-transform: uppercase;
 }
 
-#ranking-tabs button, #word-list-tabs button {
-    flex: 1;
-    background: transparent;
-    border-radius: 5px 5px 0 0;
-    color: #888;
-}
-
-#ranking-tabs button.active, #word-list-tabs button.active {
-    background: #444;
-    color: var(--accent-color);
-    border-bottom: 2px solid var(--accent-color);
-}
-
-/* ランキングテーブル */
-table {
+/* --- ランキング --- */
+#ranking-list-container table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 10px;
+    margin-top: 15px;
 }
-th, td {
-    padding: 10px;
-    border-bottom: 1px solid #444;
+#ranking-list-container th, #ranking-list-container td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
 }
-th {
-    color: var(--accent-color);
-}
-tr:nth-child(1) td { font-size: 1.2em; font-weight: bold; color: var(--accent-color); } /* 1位 */
-tr:nth-child(2) td { font-size: 1.1em; font-weight: bold; color: silver; } /* 2位 */
-tr:nth-child(3) td { font-size: 1.1em; font-weight: bold; color: #cd7f32; } /* 3位 */
-
-/* ワードリストグリッド */
-.word-list-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-    gap: 8px;
-    max-height: 60vh;
-    overflow-y: auto;
-    padding: 10px;
-    background: #333;
-    border-radius: 8px;
-}
-
-.word-item {
-    background: #444;
-    padding: 5px;
-    border-radius: 4px;
-    font-size: 0.8rem;
-    text-align: center;
-}
-
-.word-list-note {
-    font-size: 0.8rem;
-    color: #888;
+#ranking-list-container th {
+    background-color: #f2f2f2;
 }
