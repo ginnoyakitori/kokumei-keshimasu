@@ -1,562 +1,1069 @@
-// あなたのRenderのURL
+// keshimasu-client/script.js (最終統合版)
+// ----------------------------------------------------
+
+// ★★★ 🚨 要修正 ★★★
+// あなたのNode.jsサーバーの公開URLに置き換えてください。
+// ローカルでテストする場合は 'http://localhost:3000/api' などに変更
 const API_BASE_URL = 'https://kokumei-keshimasu.onrender.com/api'; 
 
-// --- 1. 変数定義 ---
-let allPuzzles = { country: { puzzles: [], cleared_ids: [] }, capital: { puzzles: [], cleared_ids: [] } }; 
+// --- 1. 定数と初期データ ---
+// allPuzzlesにはサーバーレスポンス全体（{puzzles: [], cleared_ids: [], ...}）を格納する
+let allPuzzles = { country: {}, capital: {} }; 
 let COUNTRY_DICT = [];
 let CAPITAL_DICT = []; 
 let boardData = []; 
 let initialPlayData = []; 
 let selectedCells = []; 
-let usedWords = [];     
+let usedWords = [];     
 let isCountryMode = true; 
 let isCreationPlay = false; 
 let currentDictionary = [];
 let currentPuzzleIndex = -1; 
 
-let currentPlayerNickname = null; 
-let currentPlayerId = null; 
-let playerStats = { country_clears: 0, capital_clears: 0 };
-let isComposing = false; // IME入力中フラグ
+// IME入力中かどうかを判定するフラグ（作問モード用）
+let isComposing = false;
 
-// DOM要素
-const screens = {
-    auth: document.getElementById('auth-screen'), 
-    home: document.getElementById('home-screen'),
-    mainGame: document.getElementById('main-game-screen'),
-    create: document.getElementById('create-puzzle-screen'),
-    ranking: document.getElementById('ranking-screen'),
-    wordList: document.getElementById('word-list-screen')
+let currentPlayerNickname = null; // 認証前はnull
+let currentPlayerId = null; 
+// playerStatsを定義。ホーム画面のクリア数表示はこれを参照する
+let playerStats = { 
+    country_clears: 0,
+    capital_clears: 0
 };
-const appTitleElement = document.getElementById('app-title');
+
+
+// DOM要素の取得
+const screens = {
+    auth: document.getElementById('auth-screen'), 
+    home: document.getElementById('home-screen'),
+    mainGame: document.getElementById('main-game-screen'),
+    create: document.getElementById('create-puzzle-screen'),
+    ranking: document.getElementById('ranking-screen'),
+    wordList: document.getElementById('word-list-screen')
+};
+const appTitleElement = document.getElementById('app-title'); 
 const boardElement = document.getElementById('board');
 const eraseButton = document.getElementById('erase-button');
+const createBoardElement = document.getElementById('create-board');
 const btnInputComplete = document.getElementById('btn-input-complete');
 const resetBtn = document.getElementById('reset-button');
 const inputNickname = document.getElementById('nickname-input');
 const inputPasscode = document.getElementById('passcode-input');
+const btnLoginSubmit = document.getElementById('login-btn'); 
+const btnRegisterSubmit = document.getElementById('signup-btn');
+const btnGuestPlay = document.getElementById('guest-play-btn'); 
+const welcomeMessage = document.getElementById('welcome-message');
+const wordListContent = document.getElementById('word-list-content');
+const wordListTabs = document.getElementById('word-list-tabs');
 
-// --- ユーティリティ ---
+
+// --- ユーティリティ関数 ---
+
+/** ひらがなをカタカナに変換する関数 */
 function toKatakana(str) {
-    return str.replace(/[\u3041-\u3096]/g, m => String.fromCharCode(m.charCodeAt(0) + 0x60));
+    return str.replace(/[\u3041-\u3096]/g, function(match) {
+        var chr = match.charCodeAt(0) + 0x60;
+        return String.fromCharCode(chr);
+    });
 }
+
+/** 文字がFまたはカタカナであるかをチェックする */
 function isValidGameChar(char) {
-    if (char === 'F') return true;
-    return /^[\u30a0-\u30ff]$/.test(char); 
+    if (char === 'F') return true;
+    return /^[\u30a0-\u30ff]$/.test(char); 
 }
 
-// --- ゲスト用 LocalStorage 管理 ---
-function getClearedPuzzlesFromLocal(mode) {
-    const key = `cleared_puzzles_${mode}_id_${currentPlayerId || 'guest'}`;
-    const cleared = localStorage.getItem(key);
-    return cleared ? JSON.parse(cleared) : [];
+// --- LocalStorageによるクリア状態管理 ---
+
+/**
+ * LocalStorageからクリアした問題のIDリストを取得する
+ * (サーバーから取得できなかった場合のフォールバックとして使用)
+ */
+function getClearedPuzzles(mode) {
+    const key = `cleared_puzzles_${mode}_id_${currentPlayerId || 'guest'}`;
+    const cleared = localStorage.getItem(key);
+    return cleared ? JSON.parse(cleared) : [];
 }
 
-function markPuzzleAsClearedLocal(mode, puzzleId) {
-    const key = `cleared_puzzles_${mode}_id_${currentPlayerId || 'guest'}`;
-    let cleared = getClearedPuzzlesFromLocal(mode);
-    if (!cleared.includes(puzzleId)) {
-        cleared.push(puzzleId);
-        localStorage.setItem(key, JSON.stringify(cleared));
-    }
+/**
+ * LocalStorageにクリアした問題のIDを記録する
+ */
+function markPuzzleAsCleared(mode, puzzleId) {
+    const key = `cleared_puzzles_${mode}_id_${currentPlayerId || 'guest'}`;
+    let cleared = getClearedPuzzles(mode);
+    if (!cleared.includes(puzzleId)) {
+        cleared.push(puzzleId);
+        localStorage.setItem(key, JSON.stringify(cleared));
+    }
 }
 
-// --- サーバー連携 ---
+// --- サーバー連携・プレイヤー認証 ---
+
+/**
+ * サーバーから問題リストを動的にロードする関数
+ */
 async function loadPuzzlesAndWords() {
-    const modeList = ['country', 'capital'];
-    try {
-        for (const mode of modeList) {
-            const url = `${API_BASE_URL}/puzzles/${mode}${currentPlayerId ? `?playerId=${currentPlayerId}` : ''}`;
-            const res = await fetch(url);
-            if (!res.ok) throw new Error(`${mode}問題取得エラー`);
-            
-            const data = await res.json();
-            allPuzzles[mode] = data; 
-        }
-        
-        const cRes = await fetch(`${API_BASE_URL}/words/country`);
-        const aRes = await fetch(`${API_BASE_URL}/words/capital`);
-        if (!cRes.ok || !aRes.ok) throw new Error("辞書取得エラー");
-        
-        COUNTRY_DICT = await cRes.json();
-        CAPITAL_DICT = await aRes.json();
+    const modeList = ['country', 'capital'];
+    const playerId = currentPlayerId;
+    
+    try {
+        // 1. 問題リストとクリア済みIDの取得
+        for (const mode of modeList) {
+            const url = `${API_BASE_URL}/puzzles/${mode}` + (playerId ? `?playerId=${playerId}` : '');
+            const res = await fetch(url);
+            
+            if (!res.ok) throw new Error(`${mode}問題リストの取得に失敗`);
+            
+            const data = await res.json();
+            
+            // レスポンスオブジェクト全体を格納（puzzles, cleared_ids, player_identifiedを含む）
+            allPuzzles[mode] = data; 
+            
+            // ログイン済みの場合、サーバーの最新クリア済みIDをLocalStorageに上書き同期
+            if (data.player_identified) {
+                const key = `cleared_puzzles_${mode}_id_${currentPlayerId}`;
+                localStorage.setItem(key, JSON.stringify(data.cleared_ids));
+            }
+        }
+        
+        // 2. 辞書データの取得
+        const countryWordsRes = await fetch(`${API_BASE_URL}/words/country`);
+        const capitalWordsRes = await fetch(`${API_BASE_URL}/words/capital`);
 
-        // ゲストの場合、LocalStorageからクリア数を反映
-        if (!currentPlayerId) {
-            playerStats.country_clears = getClearedPuzzlesFromLocal('country').length;
-            playerStats.capital_clears = getClearedPuzzlesFromLocal('capital').length;
-        }
-        updateHomeProblemCount();
-        
-    } catch (error) {
-        console.error("ロード失敗", error);
-        if (currentPlayerNickname === 'ゲスト') alert("サーバー接続エラー。再読み込みしてください。");
-    }
+        if (!countryWordsRes.ok || !capitalWordsRes.ok) throw new Error("辞書リストの取得に失敗");
+
+        COUNTRY_DICT = await countryWordsRes.json();
+        CAPITAL_DICT = await capitalWordsRes.json();
+        
+        updateHomeProblemCount();
+        
+    } catch (error) {
+        console.error("問題または辞書のロードに失敗しました。", error);
+        if (currentPlayerNickname === 'ゲスト' || !currentPlayerNickname) {
+            alert("サーバーから問題データをロードできませんでした。API_BASE_URLが正しいか確認してください。");
+        }
+    }
 }
 
+/**
+ * プレイヤーIDから最新のステータスを取得する
+ */
 async function getPlayerStatus(id) {
-    if (!id) return false;
-    try {
-        const res = await fetch(`${API_BASE_URL}/player/${id}`);
-        if (res.status === 404) return false;
-        if (!res.ok) throw new Error("プレイヤー取得エラー");
-        
-        const data = await res.json();
-        playerStats.country_clears = data.player.country_clears;
-        playerStats.capital_clears = data.player.capital_clears;
-        return true;
-    } catch (e) {
-        console.error(e);
-        return false;
-    }
+    if (!id) return false;
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/player/${id}`);
+        
+        if (response.status === 404) {
+             console.warn("サーバー応答: プレイヤー情報が見つかりません (404)。ローカルストレージをクリアします。");
+             return false;
+        }
+        if (!response.ok) {
+             throw new Error("プレイヤー情報取得サーバーエラー");
+        }
+        
+        const data = await response.json();
+        const player = data.player;
+
+        // playerStatsを最新のクリア数で更新
+        playerStats.country_clears = player.country_clears;
+        playerStats.capital_clears = player.capital_clears;
+        
+        // LocalStorageをサーバーデータで上書き
+        if (player.cleared_country_ids) {
+            const countryKey = `cleared_puzzles_country_id_${id}`;
+            localStorage.setItem(countryKey, JSON.stringify(player.cleared_country_ids));
+        }
+        if (player.cleared_capital_ids) {
+            const capitalKey = `cleared_puzzles_capital_id_${id}`;
+            localStorage.setItem(capitalKey, JSON.stringify(player.cleared_capital_ids));
+        }
+        
+        return true;
+    } catch (error) {
+        console.error("プレイヤー情報の取得に失敗。", error);
+        return false;
+    }
 }
 
+/** 認証成功時のセッション設定ヘルパー関数 */
 function setPlayerSession(playerData) {
-    currentPlayerNickname = playerData.nickname;
-    currentPlayerId = playerData.id;
-    playerStats.country_clears = playerData.country_clears;
-    playerStats.capital_clears = playerData.capital_clears;
-    localStorage.setItem('keshimasu_nickname', currentPlayerNickname);
-    localStorage.setItem('player_id', currentPlayerId);
+    currentPlayerNickname = playerData.nickname;
+    currentPlayerId = playerData.id; 
+    // playerStatsを最新のクリア数で更新
+    playerStats.country_clears = playerData.country_clears;
+    playerStats.capital_clears = playerData.capital_clears;
+    
+    localStorage.setItem('keshimasu_nickname', currentPlayerNickname);
+    localStorage.setItem('player_id', currentPlayerId);
 }
 
-// --- 認証 ---
+/**
+ * ログイン処理
+ */
 async function attemptLogin(nickname, passcode) {
-    if (!nickname || !passcode) { alert("両方入力してください"); return; }
-    try {
-        const res = await fetch(`${API_BASE_URL}/player/register`, {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ nickname: nickname.trim().slice(0, 20), passcode })
-        });
-        const data = await res.json();
-        if (!res.ok) { alert(data.message); return; }
-        if (data.isNewUser) { alert("未登録です。新規登録してください。"); return; }
-        
-        setPlayerSession(data.player);
-        await getPlayerStatus(currentPlayerId);
-        alert("ログイン成功！");
-        await loadPuzzlesAndWords();
-        showScreen('home');
-    } catch (e) { alert("ログイン失敗: 通信エラー"); }
+    if (!nickname || nickname.trim() === "" || !passcode || passcode.trim() === "") {
+        alert("ニックネームとパスコードの両方を入力してください。");
+        return false;
+    }
+
+    const finalName = nickname.trim().slice(0, 20); // 20文字制限
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/player/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nickname: finalName, passcode })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            alert(`ログイン失敗: ${data.message || 'サーバーエラー'}`);
+            return false;
+        }
+
+        if (data.isNewUser) {
+             alert("ログイン失敗: そのニックネームは登録されていません。新規登録ボタンをご利用ください。");
+             return false;
+        }
+        
+        setPlayerSession(data.player);
+        await getPlayerStatus(currentPlayerId); 
+        
+        alert(`${finalName}さん、ログイン成功です！`);
+        await loadPuzzlesAndWords();
+        showScreen('home');
+        return true;
+
+    } catch (error) {
+        console.error("プレイヤー認証に失敗しました。", error);
+        alert("ネットワークエラーによりログインに失敗しました。");
+        return false;
+    }
 }
 
+
+/**
+ * 新規登録処理
+ */
 async function attemptRegister(nickname, passcode) {
-    if (!nickname || !passcode) { alert("両方入力してください"); return; }
-    try {
-        const res = await fetch(`${API_BASE_URL}/player/register`, {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ nickname: nickname.trim().slice(0, 20), passcode })
-        });
-        const data = await res.json();
-        if (!res.ok) { alert(data.message); return; }
-        if (!data.isNewUser) { alert("既に登録済みです。ログインしてください。"); return; }
-        
-        setPlayerSession(data.player);
-        alert("登録成功！");
-        await loadPuzzlesAndWords();
-        showScreen('home');
-    } catch (e) { alert("登録失敗: 通信エラー"); }
+    if (!nickname || nickname.trim() === "" || !passcode || passcode.trim() === "") {
+        alert("ニックネームとパスコードの両方を入力してください。");
+        return false;
+    }
+
+    const finalName = nickname.trim().slice(0, 20); // 20文字制限
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/player/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nickname: finalName, passcode })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            alert(`新規登録失敗: ${data.message || 'サーバーエラー'}`);
+            return false;
+        }
+
+        if (!data.isNewUser) {
+             alert("新規登録失敗: そのニックネームは既に登録されています。ログインボタンをご利用ください。");
+             return false;
+        }
+        
+        setPlayerSession(data.player);
+        await getPlayerStatus(currentPlayerId); 
+        alert(`${finalName}さん、新規登録成功です！`);
+        await loadPuzzlesAndWords();
+        showScreen('home');
+        return true;
+
+    } catch (error) {
+        console.error("プレイヤー新規登録に失敗しました。", error);
+        alert("ネットワークエラーにより登録に失敗しました。");
+        return false;
+    }
 }
 
-// --- 画面遷移 ---
-function showScreen(name) {
-    Object.keys(screens).forEach(key => screens[key].style.display = (key === name ? 'block' : 'none'));
-    if (name === 'home') {
-        appTitleElement.style.display = 'block';
-        updateHomeProblemCount();
-        document.getElementById('welcome-message').textContent = `${currentPlayerNickname}さん、ようこそ！`;
-    } else {
-        appTitleElement.style.display = 'none';
+/**
+ * アプリ初期化：認証状態のチェック
+ */
+async function setupPlayer() {
+    currentPlayerId = localStorage.getItem('player_id');
+    currentPlayerNickname = localStorage.getItem('keshimasu_nickname');
+    
+    // ゲストの場合の初期値設定
+    if (currentPlayerNickname === 'ゲスト' || !currentPlayerNickname) {
+        playerStats.country_clears = getClearedPuzzles('country').length;
+        playerStats.capital_clears = getClearedPuzzles('capital').length;
     }
+
+    if (currentPlayerId && currentPlayerNickname && currentPlayerNickname !== 'ゲスト') {
+        const success = await getPlayerStatus(currentPlayerId);
+        
+        if (success) {
+            await loadPuzzlesAndWords();
+            showScreen('home');
+            return;
+        }
+        
+        currentPlayerId = null;
+        currentPlayerNickname = null;
+        localStorage.removeItem('player_id');
+        localStorage.removeItem('keshimasu_nickname');
+    }
+    
+    await loadPuzzlesAndWords(); 
+    showScreen('auth');
+}
+
+
+// --- 2. 画面表示と初期化 ---
+
+function showScreen(screenName) {
+    Object.keys(screens).forEach(key => {
+        screens[key].style.display = (key === screenName) ? 'block' : 'none';
+    });
+    
+    if (screenName === 'home') {
+        appTitleElement.style.display = 'block';
+        updateHomeProblemCount(); // playerStatsの更新後に呼ばれることを保証
+        welcomeMessage.textContent = `${currentPlayerNickname}さん、ようこそ！`;
+    } else {
+        appTitleElement.style.display = 'none';
+    }
 }
 
 function updateHomeProblemCount() {
-    const cTotal = allPuzzles.country.puzzles ? allPuzzles.country.puzzles.length : 0;
-    const aTotal = allPuzzles.capital.puzzles ? allPuzzles.capital.puzzles.length : 0;
-    document.getElementById('country-problem-count').textContent = `問題数: ${cTotal}問 (クリア済: ${playerStats.country_clears})`;
-    document.getElementById('capital-problem-count').textContent = `問題数: ${aTotal}問 (クリア済: ${playerStats.capital_clears})`;
+    // allPuzzles.mode.puzzles が存在しない場合に備えてフォールバックを設ける
+    const countryCount = allPuzzles.country.puzzles ? allPuzzles.country.puzzles.length : 0;
+    const capitalCount = allPuzzles.capital.puzzles ? allPuzzles.capital.puzzles.length : 0;
+    
+    // LocalStorageではなくplayerStats（サーバーの値）を参照する
+    const clearedCountryCount = playerStats.country_clears;
+    const clearedCapitalCount = playerStats.capital_clears;
+
+    document.getElementById('country-problem-count').textContent = `問題数: ${countryCount}問 (クリア済: ${clearedCountryCount})`;
+    document.getElementById('capital-problem-count').textContent = `問題数: ${capitalCount}問 (クリア済: ${clearedCapitalCount})`;
 }
 
-// --- ゲーム進行ロジック ---
+/**
+ * ゲームの開始
+ */
 function startGame(isCountry, isCreation) {
     const mode = isCountry ? 'country' : 'capital';
-    const allProblemData = allPuzzles[mode].puzzles || [];
+    const allProblemData = allPuzzles[mode].puzzles || []; 
+    
     allProblemData.sort((a, b) => a.id - b.id);
-
+    
     if (!isCreation) {
-        // ★ ログイン時はサーバーのクリア済みID、ゲスト時はローカルストレージのクリア済みIDを使用 ★
-        let clearedIds;
-        if (currentPlayerId) {
-            clearedIds = new Set(allPuzzles[mode].cleared_ids || []);
-        } else {
-            clearedIds = new Set(getClearedPuzzlesFromLocal(mode));
-        }
-
-        const availablePuzzles = allProblemData.filter(p => !clearedIds.has(p.id));
+        // ★★★ 修正箇所開始 ★★★
+        // サーバーからのクリア済みIDを取得
+        const serverClearedIds = allPuzzles[mode].cleared_ids || [];
+        
+        // ローカルストレージ（ゲスト用）のクリア済みIDを取得
+        const localClearedIds = getClearedPuzzles(mode);
+        
+        // 両方を結合してSetを作成（重複排除）
+        // これにより、ゲストでもローカルのクリア履歴が反映され、次の問題に進めます
+        const clearedIds = new Set([...serverClearedIds, ...localClearedIds]); 
+        // ★★★ 修正箇所終了 ★★★
+        
+        const availablePuzzles = allProblemData
+            .filter(puzzle => !clearedIds.has(puzzle.id));
 
         if (availablePuzzles.length === 0) {
-            alert(`🎉 ${isCountry ? '国名' : '首都名'}ケシマスの全問題をクリアしました！`);
+            alert(`🎉 ${isCountry ? '国名' : '首都名'}ケシマスのすべての問題をクリアしました！`);
             showScreen('home');
             return;
         }
 
         const selectedPuzzle = availablePuzzles[0];
+        
+        // 現在の問題のインデックスを取得
         currentPuzzleIndex = allProblemData.findIndex(p => p.id === selectedPuzzle.id);
         
         initialPlayData = JSON.parse(JSON.stringify(selectedPuzzle.data));
         boardData = JSON.parse(JSON.stringify(selectedPuzzle.data));
         
-        const nextProblemNumber = (currentPlayerId ? playerStats[mode + '_clears'] : getClearedPuzzlesFromLocal(mode).length) + 1;
+        // 問題番号の表示（現在表示されているクリア数 + 1）
+        const nextProblemNumber = playerStats[mode + '_clears'] + 1; 
         document.getElementById('problem-number-display').textContent = `第 ${nextProblemNumber} 問`;
-        document.getElementById('creator-display').textContent = `制作者: ${selectedPuzzle.creator}`;
+        
     } else {
-        currentPuzzleIndex = -1;
-        document.getElementById('problem-number-display').textContent = '問題制作モード';
-        document.getElementById('creator-display').textContent = `制作者: ${currentPlayerNickname}`;
+        currentPuzzleIndex = -1; 
+        document.getElementById('problem-number-display').textContent = '問題制作モード'; 
     }
 
     isCountryMode = isCountry;
-    isCreationPlay = isCreation;
-    currentDictionary = isCountry ? COUNTRY_DICT : CAPITAL_DICT;
+    isCreationPlay = isCreation; 
+    currentDictionary = isCountry ? COUNTRY_DICT : CAPITAL_DICT; 
     selectedCells = [];
     usedWords = [];
     eraseButton.disabled = true;
-    document.getElementById('current-game-title').textContent = isCountry ? '国名ケシマス' : '首都名ケシマス';
+    
+    const modeName = isCountry ? '国名ケシマス' : '首都名ケシマス';
+    
+    document.getElementById('current-game-title').textContent = modeName; 
+    
+    let creatorName = '銀の焼き鳥'; 
+    if (isCreation) {
+        creatorName = currentPlayerNickname;
+    } else if (currentPuzzleIndex !== -1) {
+        creatorName = allProblemData[currentPuzzleIndex].creator; 
+    }
+    document.getElementById('creator-display').textContent = `制作者: ${creatorName}`;
+        
     updateStatusDisplay();
-    renderBoard(5);
+    renderBoard(5); 
     showScreen('mainGame');
 }
 
-function renderBoard(visibleRows) {
-    boardElement.innerHTML = '';
-    const startRow = boardData.length - visibleRows;
-    for (let r = startRow; r < boardData.length; r++) {
-        for (let c = 0; c < boardData[r].length; c++) {
-            const cell = document.createElement('div');
-            const char = boardData[r][c];
-            cell.className = 'cell';
-            if (char === '') cell.classList.add('empty');
-            else cell.onclick = handleCellClick;
-            
-            cell.dataset.r = r; cell.dataset.c = c;
-            cell.textContent = char;
-            
-            if (selectedCells.some(coord => coord[0] === r && coord[1] === c)) {
-                cell.classList.add('selected');
-            }
-            boardElement.appendChild(cell);
-        }
-    }
+function renderBoard(visibleRows) { 
+    boardElement.innerHTML = '';
+    const startRow = boardData.length - visibleRows; 
+    
+    for (let r = startRow; r < boardData.length; r++) {
+        for (let c = 0; c < boardData[r].length; c++) {
+            const cell = document.createElement('div');
+            const char = boardData[r][c];
+
+            cell.classList.add('cell');
+            cell.dataset.r = r; 
+            cell.dataset.c = c;
+            cell.textContent = char;
+            
+            if (char === '') {
+                cell.classList.add('empty');
+            } else {
+                cell.addEventListener('click', handleCellClick);
+            }
+
+            const isSelected = selectedCells.some(coord => coord[0] === r && coord[1] === c);
+            if (isSelected) {
+                cell.classList.add('selected');
+            }
+            
+            boardElement.appendChild(cell);
+        }
+    }
 }
 
-function updateStatusDisplay() {
-    document.getElementById('used-words-display').textContent = usedWords.join(', ') || 'なし';
+function updateStatusDisplay() { 
+    document.getElementById('used-words-display').textContent = usedWords.join(', ') || 'なし';
 }
 
-async function updatePlayerScore(mode, puzzleId) {
-    if (!currentPlayerId) return;
-    try {
-        const res = await fetch(`${API_BASE_URL}/score/update`, {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ playerId: currentPlayerId, mode, puzzleId })
-        });
-        const data = await res.json();
-        playerStats[mode + '_clears'] = data.newScore;
-    } catch (e) { console.error(e); }
+/**
+ * プレイヤーのスコアとクリア済みIDをサーバーに更新する
+ */
+async function updatePlayerScore(mode, puzzleId) { 
+    if (!currentPlayerId || isCreationPlay) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/score/update`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                playerId: currentPlayerId,
+                mode: mode, 
+                puzzleId: puzzleId // クリアした問題のIDをサーバーに送信
+            })
+        });
+        
+        if (!response.ok) throw new Error('スコア更新サーバーエラー');
+
+        const data = await response.json();
+        
+        // サーバーから返された最新スコアでplayerStatsを直ちに更新
+        playerStats[mode + '_clears'] = data.newScore;
+        
+    } catch (error) {
+        console.error("スコア更新に失敗しました。", error);
+    }
 }
 
+/**
+ * 問題制作モードでクリアした問題をサーバーに登録する関数
+ */
 async function submitNewPuzzle(mode, boardData, creator) {
-    try {
-        const res = await fetch(`${API_BASE_URL}/puzzles`, {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ mode, boardData, creator })
-        });
-        if (!res.ok) throw new Error("登録エラー");
-        alert("問題登録成功！");
-        await loadPuzzlesAndWords();
-    } catch (e) { alert("問題登録失敗"); }
+    try {
+        const response = await fetch(`${API_BASE_URL}/puzzles`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                mode: mode,
+                boardData: boardData,
+                creator: creator
+            })
+        });
+        
+        if (!response.ok) throw new Error('問題登録サーバーエラー');
+
+        const data = await response.json();
+        
+        alert(`🎉 問題の登録に成功しました！\n制作者：${data.puzzle.creator}\nこの問題は今後、標準問題として出題されます。`);
+        
+        await loadPuzzlesAndWords(); // 問題を再ロードして最新の問題リストを取得
+        
+    } catch (error) {
+        console.error("問題登録に失敗しました。", error);
+        alert("問題の登録に失敗しました。サーバーが起動しているか、API_BASE_URLが正しいか確認してください。");
+    }
 }
 
-async function checkGameStatus() {
-    const totalChars = boardData.flat().filter(c => c !== '').length;
-    if (totalChars === 0) {
-        const mode = isCountryMode ? 'country' : 'capital';
-        
-        if (!isCreationPlay) {
-            const currentPuzzle = allPuzzles[mode].puzzles[currentPuzzleIndex];
-            
-            // ★ クリア処理 ★
-            if (currentPlayerId) {
-                // ログインユーザー: サーバーと同期
-                await updatePlayerScore(mode, currentPuzzle.id);
-            } else {
-                // ゲストユーザー: ローカルストレージに保存
-                markPuzzleAsClearedLocal(mode, currentPuzzle.id);
-                // 表示用の数値を更新
-                playerStats[mode + '_clears'] = getClearedPuzzlesFromLocal(mode).length;
-            }
+/**
+ * ゲームクリア時にスコア更新、通知、画面更新を行う
+ */
+async function checkGameStatus() { 
+    const totalChars = boardData.flat().filter(char => char !== '').length;
+    
+    if (totalChars === 0) {
+        const mode = isCountryMode ? 'country' : 'capital';
+        const modeName = isCountryMode ? '国名' : '首都名';
+        
+        if (!isCreationPlay) {
+            const problemDataList = allPuzzles[mode].puzzles || [];
+            // initialPlayData (解答前の盤面)からパズルIDを特定する
+            const currentPuzzle = problemDataList.find(p => JSON.stringify(p.data) === JSON.stringify(initialPlayData)); 
 
-            alert(`🎉 クリア！\nクリア数は ${playerStats[mode + '_clears']} 問になりました。`);
-            await loadPuzzlesAndWords();
-            showScreen('home');
-        } else {
-            if (confirm("クリア！この問題を登録しますか？")) {
-                await submitNewPuzzle(mode, initialPlayData, currentPlayerNickname);
-                showScreen('home');
-            } else {
-                showScreen('create');
-                renderCreateBoard();
-                fillCreateBoard(initialPlayData);
-                btnInputComplete.disabled = false;
-                document.getElementById('create-status').textContent = '入力完了！';
-            }
-        }
-    }
+            if (currentPuzzle && currentPuzzle.id) {
+                markPuzzleAsCleared(mode, currentPuzzle.id); 
+                
+                // 1. スコア更新を待ち、playerStatsを最新値にする
+                if (currentPlayerId) {
+                    await updatePlayerScore(mode, currentPuzzle.id); 
+                } else {
+                    // ゲストモードの場合、ローカルでスコアをインクリメント
+                    playerStats[mode + '_clears']++; 
+                }
+            }
+
+            // 2. 通知に最新のスコア (playerStats[mode + '_clears']) を反映
+            const latestClearedCount = playerStats[mode + '_clears']; 
+            alert(`🎉 全ての文字を消去しました！クリアです！\nあなたの${modeName}クリア数は${latestClearedCount}問になりました。`);
+            
+            // 3. 問題リストとホーム画面表示を更新するため、サーバーからデータを再ロード
+            await loadPuzzlesAndWords(); 
+            showScreen('home'); // 標準モードはホームに戻る
+        
+        } else {
+            const registrationConfirmed = confirm("🎉 作成した問題をクリアしました！\nこの問題を標準問題として登録しますか？");
+            if (registrationConfirmed) {
+                const finalBoard = JSON.parse(JSON.stringify(initialPlayData));
+                await submitNewPuzzle(mode, finalBoard, currentPlayerNickname);
+                showScreen('home'); // 登録した場合はホームに戻る
+            } else {
+                alert("問題の登録をスキップしました。作成画面に戻ります。");
+                
+                // 登録スキップ時は、作成画面に戻して再編集可能にする
+                showScreen('create'); 
+                renderCreateBoard(); 
+                fillCreateBoard(initialPlayData); // 元の入力データを復元
+                btnInputComplete.disabled = false;
+                document.getElementById('create-status').textContent = '入力完了！解答を開始できます。';
+                document.getElementById('creation-mode-select').value = mode; 
+            }
+        }
+    }
 }
 
-// --- パズルロジック (重力・選択・消去) ---
-function applyGravity() {
-    for (let c = 0; c < 5; c++) {
-        let chars = [];
-        for (let r = boardData.length - 1; r >= 0; r--) {
-            if (boardData[r][c] !== '') chars.unshift(boardData[r][c]);
-        }
-        let newCol = Array(8 - chars.length).fill('').concat(chars);
-        for (let r = 0; r < 8; r++) boardData[r][c] = newCol[r];
-    }
+
+// --- 3. ゲームロジックの中核 ---
+
+function applyGravity() { 
+    for (let c = 0; c < 5; c++) {
+        let columnChars = [];
+        for (let r = boardData.length - 1; r >= 0; r--) {
+            if (boardData[r][c] !== '') {
+                columnChars.unshift(boardData[r][c]); 
+            }
+        }
+        let newColumn = Array(8 - columnChars.length).fill('');
+        newColumn = newColumn.concat(columnChars);
+
+        for (let r = 0; r < 8; r++) {
+            boardData[r][c] = newColumn[r];
+        }
+    }
 }
 
-function handleCellClick(e) {
-    const r = parseInt(e.target.dataset.r);
-    const c = parseInt(e.target.dataset.c);
+/** セルクリックハンドラ */
+function handleCellClick(event) { 
+    const r = parseInt(event.target.dataset.r);
+    const c = parseInt(event.target.dataset.c);
 
-    // 簡易的な選択ロジック（隣接判定などは省略せず実装済みのものを利用）
-    if (selectedCells.length === 0) {
-        selectedCells.push([r, c]);
+    if (selectedCells.length === 0) {
+        selectedCells.push([r, c]);
+        eraseButton.disabled = false;
+    } else {
+        const [prevR, prevC] = selectedCells[selectedCells.length - 1];
+        
+        const isHorizontal = r === prevR && Math.abs(c - prevC) === 1;
+        const isVertical = c === prevC && Math.abs(r - prevR) === 1;
+
+        const index = selectedCells.findIndex(coord => coord[0] === r && coord[1] === c);
+        if (index > -1) {
+            selectedCells.splice(index + 1);
+        }
+        else if (isHorizontal || isVertical) {
+            
+            let shouldAdd = false;
+            
+            if (selectedCells.length === 1) {
+                shouldAdd = true;
+            } else {
+                const [firstR, firstC] = selectedCells[0];
+                
+                const isCurrentPatternHorizontal = selectedCells.every(coord => coord[0] === firstR);
+                const isCurrentPatternVertical = selectedCells.every(coord => coord[1] === firstC);
+                
+                if (isCurrentPatternHorizontal) {
+                    if (r === firstR && isHorizontal) {
+                        shouldAdd = true;
+                    }
+                } 
+                else if (isCurrentPatternVertical) {
+                    if (c === firstC && isVertical) {
+                        shouldAdd = true;
+                    }
+                }
+            }
+
+            if (shouldAdd) {
+                selectedCells.push([r, c]);
+            } else {
+                selectedCells = [[r, c]];
+            }
+        } 
+        else {
+            selectedCells = [[r, c]];
+        }
+    }
+    
+    eraseButton.disabled = selectedCells.length < 2;
+    renderBoard(5); 
+}
+
+/** 消去ボタンイベントリスナー */
+eraseButton.addEventListener('click', async () => { 
+    if (selectedCells.length < 2) return;
+
+    // 選択されたセルを正しい順番（左から右、上から下）にソートする
+    let sortedSelectedCells = [...selectedCells];
+    const [firstR, firstC] = selectedCells[0];
+    // selectedCellsがすべて同じ行 (r) であれば水平方向
+    const isHorizontal = selectedCells.every(coord => coord[0] === firstR); 
+    
+    if (isHorizontal) {
+        // 水平方向の場合: 列 (c) で昇順にソート (左から右)
+        sortedSelectedCells.sort((a, b) => a[1] - b[1]);
     } else {
-        // 直線判定ロジック
-        const [lastR, lastC] = selectedCells[selectedCells.length - 1];
-        const isAdj = (r === lastR && Math.abs(c - lastC) === 1) || (c === lastC && Math.abs(r - lastR) === 1);
-        
-        // 既存の選択解除
-        const idx = selectedCells.findIndex(co => co[0] === r && co[1] === c);
-        if (idx > -1) {
-            selectedCells.splice(idx + 1);
-        } else if (isAdj) {
-            // 直線性の維持
-            if (selectedCells.length >= 2) {
-                const [firstR, firstC] = selectedCells[0];
-                const isHoriz = selectedCells.every(co => co[0] === firstR);
-                const isVert = selectedCells.every(co => co[1] === firstC);
-                
-                if ((isHoriz && r === firstR) || (isVert && c === firstC)) selectedCells.push([r, c]);
-            } else {
-                selectedCells.push([r, c]);
-            }
-        } else {
-            selectedCells = [[r, c]];
-        }
-    }
-    
-    eraseButton.disabled = selectedCells.length < 2;
-    renderBoard(5);
-}
-
-eraseButton.addEventListener('click', async () => {
-    if (selectedCells.length < 2) return;
-    
-    // ソート
-    let sorted = [...selectedCells];
-    const isHoriz = sorted.every(c => c[0] === sorted[0][0]);
-    if (isHoriz) sorted.sort((a, b) => a[1] - b[1]);
-    else sorted.sort((a, b) => a[0] - b[0]);
-
-    let chars = sorted.map(([r, c]) => boardData[r][c]);
-    let word = chars.join('');
-    
-    // F処理
-    if (word.includes('F')) {
-        let fIndices = chars.map((c, i) => c === 'F' ? i : -1).filter(i => i !== -1);
-        for (let i of fIndices) {
-            let input = prompt(`「${word}」の${i+1}文字目(F)は何？`);
-            if (!input) return;
-            let kana = toKatakana(input).toUpperCase().slice(0, 1);
-            if (!isValidGameChar(kana) && kana !== 'F') { alert("無効な文字"); return; }
-            chars[i] = kana;
-        }
-        word = chars.join('');
+        // 垂直方向の場合: 行 (r) で昇順にソート (上から下)
+        sortedSelectedCells.sort((a, b) => a[0] - b[0]);
     }
 
-    if (!currentDictionary.includes(word)) { alert("辞書にありません"); return; }
-    if (usedWords.includes(word)) { alert("既に使用済み"); return; }
+    let selectedWordChars = sortedSelectedCells.map(([r, c]) => boardData[r][c]); 
+    let selectedWord = selectedWordChars.join(''); 
+    let finalWord = ''; 
 
-    selectedCells.forEach(([r, c]) => boardData[r][c] = '');
-    usedWords.push(word);
-    applyGravity();
-    selectedCells = [];
-    eraseButton.disabled = true;
-    renderBoard(5);
-    updateStatusDisplay();
-    await checkGameStatus();
+    const mode = isCountryMode ? '国名' : '首都名';
+    
+    if (selectedWord.includes('F')) {
+        let tempWordChars = [...selectedWordChars]; 
+        let fIndices = []; 
+
+        selectedWordChars.forEach((char, index) => {
+            if (char === 'F') {
+                fIndices.push(index);
+            }
+        });
+
+        for (const index of fIndices) {
+            let inputChar = '';
+            
+            const promptText = `「${selectedWord}」のうち、${index + 1}文字目（F）を何にしますか？`;
+            let input = prompt(promptText);
+
+            if (input && input.trim() !== '') {
+                inputChar = toKatakana(input).toUpperCase().slice(0, 1);
+                if (!isValidGameChar(inputChar) && inputChar !== 'F') {
+                    alert('入力された文字は有効ではありません。');
+                    return; 
+                }
+                tempWordChars[index] = inputChar; 
+            } else {
+                alert('文字が入力されませんでした。');
+                return; 
+            }
+        }
+        finalWord = tempWordChars.join('');
+    } else {
+        finalWord = selectedWord;
+    }
+
+    if (!currentDictionary.includes(finalWord)) {
+        alert(`「${finalWord}」は有効な${mode}ではありません。`);
+        return;
+    }
+
+    if (usedWords.includes(finalWord)) {
+        alert(`「${finalWord}」は既に使用済みです。`);
+        return;
+    }
+
+    selectedCells.forEach(([r, c]) => {
+        boardData[r][c] = '';
+    });
+    
+    usedWords.push(finalWord);
+    
+    applyGravity();
+    
+    selectedCells = [];
+    eraseButton.disabled = true;
+    
+    renderBoard(5); 
+    updateStatusDisplay();
+    await checkGameStatus();
 });
 
-resetBtn.addEventListener('click', () => {
-    if (isCreationPlay) {
-        showScreen('create');
-        renderCreateBoard();
-        fillCreateBoard(initialPlayData);
-        btnInputComplete.disabled = false;
-        document.getElementById('create-status').textContent = '入力完了！';
-    } else if (currentPuzzleIndex !== -1) {
-        const mode = isCountryMode ? 'country' : 'capital';
-        const p = allPuzzles[mode].puzzles[currentPuzzleIndex];
-        boardData = JSON.parse(JSON.stringify(p.data));
-        selectedCells = []; usedWords = []; eraseButton.disabled = true;
-        renderBoard(5); updateStatusDisplay();
-    }
+resetBtn.addEventListener('click', () => { 
+    if (isCreationPlay) {
+        showScreen('create');
+        renderCreateBoard(); // 制作画面のボードをリセット
+        // 制作モードで元の入力データを盤面に復元
+        fillCreateBoard(initialPlayData); 
+        btnInputComplete.disabled = false;
+        document.getElementById('create-status').textContent = '入力完了！解答を開始できます。';
+        
+    } else if (currentPuzzleIndex !== -1) {
+        // allPuzzles[mode].puzzles を参照する
+        const problemDataList = isCountryMode ? allPuzzles.country.puzzles : allPuzzles.capital.puzzles;
+        const selectedPuzzle = problemDataList[currentPuzzleIndex];
+        
+        initialPlayData = JSON.parse(JSON.stringify(selectedPuzzle.data));
+        boardData = JSON.parse(JSON.stringify(selectedPuzzle.data));
+        selectedCells = [];
+        usedWords = [];
+        eraseButton.disabled = true;
+        
+        renderBoard(5); 
+        updateStatusDisplay();
+    }
 });
 
-// --- 問題制作モード（フリック入力・濁音対応） ---
-function renderCreateBoard() {
-    const cb = document.getElementById('create-board');
-    cb.innerHTML = '';
+
+// --- 4. 問題制作モードのロジック ---
+
+function renderCreateBoard() { 
+    createBoardElement.innerHTML = '';
+    
     for (let r = 0; r < 8; r++) {
         for (let c = 0; c < 5; c++) {
             const cell = document.createElement('div');
-            cell.className = 'create-cell';
-            const inp = document.createElement('input');
-            inp.className = 'create-input';
-            inp.type = 'text'; inp.maxLength = 1;
-            inp.dataset.r = r; inp.dataset.c = c;
+            cell.classList.add('create-cell');
             
-            // ★ フリック入力対応イベント ★
-            inp.addEventListener('compositionstart', () => { isComposing = true; });
-            inp.addEventListener('compositionend', (e) => { isComposing = false; checkCreationInput(e); });
-            inp.addEventListener('input', (e) => { if (!isComposing) checkCreationInput(e); });
-            inp.addEventListener('blur', (e) => { isComposing = false; checkCreationInput(e); });
+            const input = document.createElement('input');
+            input.classList.add('create-input');
+            input.type = 'text';
+            input.maxLength = 1;
+            input.dataset.r = r;
+            input.dataset.c = c;
+          
+           // --- フリック入力・濁音対応（IME制御） ---
+           input.addEventListener('compositionstart', () => {
+               isComposing = true;
+           });
+
+           input.addEventListener('compositionend', (e) => {
+               isComposing = false;
+               // 確定後、即座にチェックを実行
+               checkCreationInput(e); 
+           });
+           
+           input.addEventListener('input', (e) => {
+               // IME入力中でなければ、すぐにチェック
+               if (!isComposing) {
+                   checkCreationInput(e);
+               }
+           });
+           
+           // フォーカスが外れたとき（濁音などが確定する）
+           input.addEventListener('blur', (e) => {
+               isComposing = false; 
+               checkCreationInput(e);
+           });
             
-            cell.appendChild(inp);
-            cb.appendChild(cell);
+            cell.appendChild(input);
+            createBoardElement.appendChild(cell);
         }
     }
+    // 初期値は国名モードにする
     document.getElementById('creation-mode-select').value = 'country';
 }
 
-function checkCreationInput(e) {
-    if (e && e.target) {
-        if (!isComposing) {
-            let val = toKatakana(e.target.value.toUpperCase());
-            if (val.length > 0 && !isValidGameChar(val) && val !== 'F') val = '';
-            e.target.value = val.slice(0, 1);
-        }
-    }
-    const inputs = document.querySelectorAll('.create-input');
-    let count = 0;
-    inputs.forEach(i => { if (i.value.length === 1 && (isValidGameChar(i.value) || i.value === 'F')) count++; });
-    
-    if (count === 40) {
-        btnInputComplete.disabled = false;
-        document.getElementById('create-status').textContent = '入力完了！';
-    } else {
-        btnInputComplete.disabled = true;
-        document.getElementById('create-status').textContent = `残り${40 - count}マス`;
-    }
+// ヘルパー関数: 2次元配列のデータを制作ボードのinputに設定する
+function fillCreateBoard(data) {
+    if (!data || data.length === 0) return;
+    const inputs = document.querySelectorAll('.create-input');
+    inputs.forEach(input => {
+        const r = parseInt(input.dataset.r);
+        const c = parseInt(input.dataset.c);
+        if (r < data.length && c < data[r].length) {
+            input.value = data[r][c] || '';
+        }
+    });
+    checkCreationInput(); // 埋めた後にステータスを更新
 }
 
-function fillCreateBoard(data) {
-    if (!data) return;
-    document.querySelectorAll('.create-input').forEach(inp => {
-        const r = parseInt(inp.dataset.r), c = parseInt(inp.dataset.c);
-        if (data[r] && data[r][c]) inp.value = data[r][c];
-    });
-    checkCreationInput();
+function checkCreationInput(event) {
+    if (event && event.target) {
+        let input = event.target;
+        let value = input.value;
+        
+        // IME確定後、またはblur時（isComposingがfalseの時）のみ、文字のチェックと変換を行う
+        if (event.type === 'compositionend' || event.type === 'blur' || !isComposing) {
+            value = value.toUpperCase();
+            value = toKatakana(value);
+
+            // Fの入力を許容
+            if (value.length > 0 && !isValidGameChar(value) && value !== 'F') { 
+                value = ''; 
+            }
+            input.value = value.slice(0, 1);
+        }
+    }
+
+    const inputs = document.querySelectorAll('.create-input');
+    let filledCount = 0;
+    
+    inputs.forEach(input => {
+        if (input.value.length === 1 && (isValidGameChar(input.value) || input.value === 'F')) {
+            filledCount++;
+        }
+    });
+
+    if (filledCount === 40) {
+        btnInputComplete.disabled = false;
+        document.getElementById('create-status').textContent = '入力完了！解答を開始できます。';
+    } else {
+        btnInputComplete.disabled = true;
+        document.getElementById('create-status').textContent = `残り${40 - filledCount}マスに入力が必要です。`;
+    }
 }
 
 btnInputComplete.addEventListener('click', () => {
-    let newBoard = Array(8).fill(0).map(() => Array(5).fill(''));
-    document.querySelectorAll('.create-input').forEach(inp => {
-        newBoard[inp.dataset.r][inp.dataset.c] = inp.value;
-    });
-    initialPlayData = JSON.parse(JSON.stringify(newBoard));
-    boardData = JSON.parse(JSON.stringify(newBoard));
-    startGame(document.getElementById('creation-mode-select').value === 'country', true);
+    const inputs = document.querySelectorAll('.create-input');
+    let newBoard = Array(8).fill(0).map(() => Array(5).fill(''));
+    
+    inputs.forEach(input => {
+        const r = parseInt(input.dataset.r);
+        const c = parseInt(input.dataset.c);
+        newBoard[r][c] = input.value;
+    });
+
+    const modeSelect = document.getElementById('creation-mode-select');
+    const isCountry = modeSelect.value === 'country';
+
+    initialPlayData = JSON.parse(JSON.stringify(newBoard));
+    boardData = JSON.parse(JSON.stringify(newBoard));
+    startGame(isCountry, true); 
 });
 
-// --- ランキング表示 ---
-document.getElementById('btn-ranking').addEventListener('click', () => {
-    showScreen('ranking');
-    fetchAndDisplayRanking('total');
-});
-document.getElementById('ranking-tabs').addEventListener('click', (e) => {
-    if (e.target.tagName === 'BUTTON') fetchAndDisplayRanking(e.target.dataset.type);
-});
+
+// --- 5. ランキングロジック ---
+
+const rankingScreen = document.getElementById('ranking-screen');
+const rankingTabs = document.getElementById('ranking-tabs');
 
 async function fetchAndDisplayRanking(type) {
-    const container = document.getElementById('ranking-list-container');
-    container.innerHTML = '読み込み中...';
-    document.getElementById('ranking-nickname-display').textContent = `あなたの記録: ${currentPlayerNickname} (${playerStats.country_clears + playerStats.capital_clears}問)`;
-    
-    try {
-        const res = await fetch(`${API_BASE_URL}/rankings/${type}`);
-        const data = await res.json();
-        let html = `<table><tr><th>順位</th><th>名前</th><th>数</th></tr>`;
-        data.forEach(d => {
-            const style = d.nickname === currentPlayerNickname ? 'background:#554400;color:#FFD700' : '';
-            html += `<tr style="${style}"><td>${d.rank}</td><td>${d.nickname}</td><td>${d.score}</td></tr>`;
-        });
-        html += '</table>';
-        container.innerHTML = html;
-    } catch (e) { container.innerHTML = '取得失敗'; }
+    const container = document.getElementById('ranking-list-container');
+    container.innerHTML = `<div>${type}ランキングをサーバーから取得中...</div>`;
+
+    const totalScore = playerStats.country_clears + playerStats.capital_clears;
+    document.getElementById('ranking-nickname-display').innerHTML = `あなたの記録: <strong>${currentPlayerNickname}</strong> (国名: ${playerStats.country_clears}, 首都名: ${playerStats.capital_clears}, 合計: ${totalScore})`;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/rankings/${type}`);
+        
+        if (!response.ok) throw new Error('ランキング取得サーバーエラー');
+
+        const rankings = await response.json();
+        
+        let html = `<h3>${type === 'total' ? '総合' : type === 'country' ? '国名' : '首都名'}ランキング</h3>`;
+        html += `<table class="ranking-table"><tr><th>順位</th><th>ニックネーム</th><th>クリア数</th></tr>`;
+        
+        rankings.forEach(item => {
+            const isCurrentPlayer = item.nickname === currentPlayerNickname;
+            html += `<tr style="${isCurrentPlayer ? 'background-color: #554400; font-weight: bold; color:#FFD700;' : ''}"><td>${item.rank}</td><td>${item.nickname}</td><td>${item.score}</td></tr>`;
+        });
+        
+        html += '</table>';
+        container.innerHTML = html;
+
+    } catch (error) {
+        console.error("ランキング取得に失敗しました。", error);
+        container.innerHTML = `<p style="color:red;">ランキング取得エラー: サーバーが起動しているか、ネットワーク接続を確認してください。</p>`;
+    }
 }
 
-// --- ワードリスト ---
-document.getElementById('btn-word-list').addEventListener('click', () => {
-    showScreen('wordList'); displayWordList('country');
-});
-document.getElementById('word-list-tabs').addEventListener('click', (e) => {
-    if (e.target.tagName === 'BUTTON') displayWordList(e.target.dataset.type);
-});
+
+// --- 5.5. ワードリスト表示ロジック ---
 
 function displayWordList(type) {
-    const list = type === 'country' ? COUNTRY_DICT : CAPITAL_DICT;
-    const div = document.getElementById('word-list-content');
-    div.innerHTML = '';
-    list.sort((a,b) => a.length - b.length || a.localeCompare(b));
-    list.forEach(w => {
-        const d = document.createElement('div'); d.className = 'word-item'; d.textContent = w;
-        div.appendChild(d);
-    });
-    document.querySelectorAll('#word-list-tabs button').forEach(b => b.classList.toggle('active', b.dataset.type === type));
+    const dictionary = (type === 'country') ? COUNTRY_DICT : CAPITAL_DICT;
+    
+    if (dictionary.length === 0) {
+        wordListContent.innerHTML = `<p>辞書データがサーバーからロードされていません。</p>`;
+        return;
+    }
+
+    wordListTabs.querySelectorAll('button').forEach(btn => {
+        if (btn.dataset.type === type) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+
+    wordListContent.innerHTML = '';
+    dictionary.sort((a, b) => {
+        if (a.length !== b.length) {
+            return a.length - b.length;
+        }
+        return a.localeCompare(b);
+    });
+    
+    dictionary.forEach(word => {
+        const item = document.createElement('div');
+        item.classList.add('word-item');
+        item.textContent = word;
+        wordListContent.appendChild(item);
+    });
 }
 
-// --- イベント登録 ---
-document.getElementById('login-btn').addEventListener('click', () => attemptLogin(inputNickname.value, inputPasscode.value));
-document.getElementById('signup-btn').addEventListener('click', () => attemptRegister(inputNickname.value, inputPasscode.value));
-document.getElementById('guest-play-btn').addEventListener('click', () => {
-    currentPlayerNickname = 'ゲスト'; currentPlayerId = null;
-    localStorage.removeItem('player_id'); localStorage.removeItem('keshimasu_nickname');
-    loadPuzzlesAndWords().then(() => showScreen('home'));
-});
-document.getElementById('btn-country-mode').addEventListener('click', () => startGame(true, false));
-document.getElementById('btn-capital-mode').addEventListener('click', () => startGame(false, false));
-document.getElementById('btn-create-mode').addEventListener('click', () => { showScreen('create'); renderCreateBoard(); });
-document.getElementById('btn-create-back').addEventListener('click', () => showScreen('home'));
-document.getElementById('btn-back-to-home').addEventListener('click', () => showScreen('home'));
-document.getElementById('btn-ranking-back').addEventListener('click', () => showScreen('home'));
-document.getElementById('btn-word-list-back').addEventListener('click', () => showScreen('home'));
-document.getElementById('btn-logout').addEventListener('click', () => { localStorage.clear(); location.reload(); });
+// --- 6. イベントリスナーの設定 ---
 
-// 初期起動
-window.onload = async () => {
-    currentPlayerId = localStorage.getItem('player_id');
-    currentPlayerNickname = localStorage.getItem('keshimasu_nickname');
-    if (currentPlayerId) {
-        const ok = await getPlayerStatus(currentPlayerId);
-        if (!ok) {
-            currentPlayerId = null; currentPlayerNickname = null;
-            localStorage.clear();
-        }
+// 日本語入力時でもリアルタイムでmaxlengthを強制する関数
+function enforceMaxLength(elementId, maxLength) {
+    const inputElement = document.getElementById(elementId);
+    if (inputElement) {
+        inputElement.addEventListener('input', function() {
+            if (this.value.length > maxLength) {
+                this.value = this.value.substring(0, maxLength);
+            }
+        });
     }
-    await loadPuzzlesAndWords();
-    showScreen(currentPlayerId ? 'home' : 'auth');
-};
+}
+
+if (btnLoginSubmit) {
+    btnLoginSubmit.addEventListener('click', () => {
+        attemptLogin(inputNickname.value, inputPasscode.value);
+    });
+}
+if (btnRegisterSubmit) {
+    btnRegisterSubmit.addEventListener('click', () => {
+        attemptRegister(inputNickname.value, inputPasscode.value);
+    });
+}
+if (inputPasscode) {
+    inputPasscode.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            attemptLogin(inputNickname.value, inputPasscode.value);
+        }
+    });
+}
+if (btnGuestPlay) { 
+    btnGuestPlay.addEventListener('click', async () => {
+        currentPlayerNickname = "ゲスト";
+        currentPlayerId = null;
+        localStorage.removeItem('player_id');
+        localStorage.removeItem('keshimasu_nickname');
+        
+        // ゲストモード開始時にローカルのクリア数をplayerStatsに反映
+        playerStats.country_clears = getClearedPuzzles('country').length; 
+        playerStats.capital_clears = getClearedPuzzles('capital').length; 
+        
+        alert("ゲストとしてゲームを開始します。スコアはランキングに保存されません。");
+        await loadPuzzlesAndWords(); 
+        showScreen('home');
+    });
+}
+document.getElementById('btn-logout').addEventListener('click', () => {
+    currentPlayerNickname = null;
+    currentPlayerId = null;
+    localStorage.removeItem('player_id');
+    localStorage.removeItem('keshimasu_nickname');
+    inputNickname.value = '';
+    inputPasscode.value = '';
+    showScreen('auth');
+});
+
+
+// ホーム画面リスナー
+document.getElementById('btn-country-mode').addEventListener('click', () => {
+    startGame(true, false); 
+});
+document.getElementById('btn-capital-mode').addEventListener('click', () => {
+    startGame(false, false); 
+});
+document.getElementById('btn-create-mode').addEventListener('click', () => {
+    if (!currentPlayerNickname || currentPlayerNickname === 'ゲスト') {
+        alert("問題制作モードを利用するには、ログインしてください。");
+        return;
+    }
+    showScreen('create');
+    renderCreateBoard();
+    checkCreationInput();
+});
+
+document.getElementById('btn-ranking').addEventListener('click', () => {
+    showScreen('ranking');
+    fetchAndDisplayRanking('total');
+});
+
+// ランキングタブのリスナー
+rankingTabs.addEventListener('click', (event) => {
+    if (event.target.tagName === 'BUTTON') {
+        fetchAndDisplayRanking(event.target.dataset.type);
+    }
+});
+
+// ワードリストボタンのリスナー
+document.getElementById('btn-word-list').addEventListener('click', () => {
+    showScreen('wordList');
+    displayWordList('country'); 
+});
+wordListTabs.addEventListener('click', (event) => {
+    if (event.target.tagName === 'BUTTON') {
+        displayWordList(event.target.dataset.type);
+    }
+});
+
+// 画面遷移ボタン
+document.getElementById('btn-back-to-home').addEventListener('click', () => {
+    showScreen('home');
+});
+document.getElementById('btn-create-back').addEventListener('click', () => {
+    showScreen('home');
+});
+document.getElementById('btn-ranking-back').addEventListener('click', () => {
+    showScreen('home');
+});
+document.getElementById('btn-word-list-back').addEventListener('click', () => {
+    showScreen('home');
+});
+
+
+// --- 7. 初期化 ---
+// ニックネーム入力の制限を適用
+document.addEventListener('DOMContentLoaded', () => {
+    enforceMaxLength('nickname-input', 20); 
+});
+
+setupPlayer();
