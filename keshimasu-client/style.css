@@ -694,25 +694,28 @@ h2 {
 /* ======================================= */
 /* 7. スマートフォン対応 (盤面幅100%と中央寄せの強制) */
 /* ======================================= */
+/* ======================================= */
+/* 7. スマートフォン対応 (盤面幅100%と文字サイズ調整) */
+/* ======================================= */
 
 @media (max-width: 600px) {
     
     /* ★★★ アプリ全体の中央寄せ設定 ★★★ */
     body {
         font-size: 14px; 
-        padding-left: 5px;  
-        padding-right: 5px;
+        padding-left: 10px;  /* 余白を少し確保 */
+        padding-right: 10px;
     }
     
     #app-container {
         width: 100%;
-        max-width: 100%; /* 親コンテナの幅を制限解除 */
+        max-width: 100%; 
         margin-left: auto;
         margin-right: auto;
-        padding: 15px;
+        padding: 15px 10px; /* 横のパディングを少し減らして盤面を広く */
     }
 
-    /* ゲーム画面全体のコンテナ幅を100%に */
+    /* ゲーム画面全体のコンテナ */
     .game-container {
         max-width: 100%; 
         margin: 0 auto;
@@ -724,30 +727,42 @@ h2 {
         width: 100%;
         max-width: 100%; 
         
-        /* 5列に均等に分割し、幅いっぱいに広がるようにする */
+        /* 5列に均等に分割 */
         grid-template-columns: repeat(5, 1fr); 
-        gap: 2px;
+        gap: 3px; /* 隙間を少し広げて見やすく */
         margin: 10px auto; 
     }
 
-    /* セルは親（グリッド）の幅に対して相対的なサイズになるため、固定サイズを解除 */
+    /* セルの文字サイズを劇的に拡大 */
     .cell, .create-cell {
-        aspect-ratio: 1 / 1; 
-        font-size: 4vw; /* 画面幅の4%をフォントサイズに利用 */
+        aspect-ratio: 1 / 1; /* 正方形を維持 */
+        height: auto;        /* PC版の height: 70px をリセット */
+        
+        /* ▼▼▼ ここを修正しました ▼▼▼ */
+        font-size: 8.5vw;    /* 4vw -> 8.5vw に変更 (画面幅に応じて大きく) */
+        /* ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ */
+        
         font-weight: 900;
+        border-width: 1px;   /* モバイルでは枠線を少し細く */
     }
 
-    /* 制作モードの入力欄も調整 */
+    /* 制作モードの入力欄も大きく */
     .create-input {
-        font-size: 4vw;
+        font-size: 8vw; /* 4vw -> 8vw に変更 */
     }
 
-    /* ボタン群を縦に積み重ねるなど、レイアウトを調整 */
+    /* ボタン群のレイアウト調整 */
     .controls {
         flex-direction: column;
-        gap: 8px;
+        gap: 10px;
     }
     
+    .control-panel button {
+        width: 100%; /* ボタンを押しやすく横幅いっぱいに */
+        padding: 15px; /* タップ領域を広げる */
+        font-size: 1.1em;
+    }
+
     .status-display {
         padding: 8px;
     }
@@ -757,10 +772,12 @@ h2 {
     #auth-screen input[type="password"] {
         width: calc(100% - 30px);
         max-width: none; 
+        font-size: 16px; /* iOSでのズーム防止 */
     }
     
     /* ランキングテーブルの文字サイズを調整 */
     .ranking-table th, .ranking-table td {
-        font-size: 13px;
+        font-size: 12px;
+        padding: 5px;
     }
 }
