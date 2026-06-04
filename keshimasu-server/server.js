@@ -218,57 +218,80 @@ const CAPITAL_WORDS = require('./data/capital_words.json');
      * クライアント側でクリア済みIDを参照してフィルタリングする責務を持つ
      */
     app.get('/api/puzzles/:mode', async (req, res) => {
-        const { mode } = req.params;
-        const { playerId } = req.query; // playerIdをクエリパラメータから取得
-        
-        if (!['country', 'capital'].includes(mode)) {
-            return res.status(400).json({ message: '無効なモードです。' });
-        }
-        
-        let clearedIds = [];
-        let playerIdentified = false; // プレイヤーが特定できたかを示すフラグ
-        
-        // 1. プレイヤーIDがあれば、クリア済みIDを取得
-        if (playerId) {
-            try {
-                const clearedIdsColumn = mode === 'country' ? 'cleared_country_ids' : 'cleared_capital_ids';
-                const playerResult = await db.query(
-                    `SELECT ${clearedIdsColumn} FROM players WHERE id = $1`,
-                    [playerId]
-                );
+    const { mode } = req.params;
+    const { playerId } = req.query;
 
-                if (playerResult.rows.length > 0) {
-                    const clearedIdsData = playerResult.rows[0][clearedIdsColumn];
-                    // JSONB型の場合、clearedIdsDataは既に配列であるため、その値をセット
-                    clearedIds = clearedIdsData || []; 
-                    playerIdentified = true; // プレイヤー特定成功
-                }
-            } catch (err) {
-                console.error('クリア済みID取得エラー:', err.message);
-                // エラーが発生した場合も、問題リストの取得は続行（clearedIdsは[]のまま）
+    if (!['country', 'capital'].includes(mode)) {
+        return res.status(400).json({
+            message: '無効なモードです。'
+        });
+    }
+
+    const clearedColumn =
+        mode === 'country'
+            ? 'cleared_country_ids'
+            : 'cleared_capital_ids';
+
+    try {
+        const puzzlesResult = await db.query(
+            `
+            SELECT
+                p.id,
+                p.mode,
+                p.data,
+                p.creator,
+                p.created_at,
+                (
+                    SELECT COUNT(*)
+                    FROM players pl
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM jsonb_array_elements_text(
+                            COALESCE(pl.${clearedColumn}, '[]'::jsonb)
+                        ) AS cleared_id(value)
+                        WHERE cleared_id.value::integer = p.id
+                    )
+                )::integer AS clear_count
+            FROM puzzles p
+            WHERE p.mode = $1
+            ORDER BY p.id ASC;
+            `,
+            [mode]
+        );
+
+        let clearedIds = [];
+        let playerIdentified = false;
+
+        if (playerId) {
+            const playerResult = await db.query(
+                `
+                SELECT ${clearedColumn} AS cleared_ids
+                FROM players
+                WHERE id = $1;
+                `,
+                [playerId]
+            );
+
+            if (playerResult.rows.length > 0) {
+                playerIdentified = true;
+                clearedIds = playerResult.rows[0].cleared_ids || [];
             }
         }
 
-        // 2. 問題リスト全体を取得 (フィルタリングはクライアントに任せるため、ここでは全ての対象問題を取得)
-        try {
-            // modeに一致する全ての問題を取得する
-            const sql = 'SELECT id, board_data AS data, creator FROM puzzles WHERE mode = $1 ORDER BY created_at ASC';
-            
-            const result = await db.query(sql, [mode]);
-            
-            // 3. レスポンスにすべての情報を含めて返す
-            res.json({ 
-                puzzles: result.rows, 
-                cleared_ids: clearedIds,
-                player_identified: playerIdentified, // フラグをクライアントに返す
-                message: playerIdentified ? '問題リストと最新のクリア済みIDを返却しました。' : 'ゲスト/未ログイン用の全問題リストを返却しました。'
-            });
+        return res.json({
+            puzzles: puzzlesResult.rows,
+            cleared_ids: clearedIds,
+            player_identified: playerIdentified
+        });
 
-        } catch (err) {
-            console.error('問題リスト取得エラー:', err.message);
-            res.status(500).json({ message: 'サーバーエラーにより問題を取得できませんでした。' });
-        }
-    });
+    } catch (error) {
+        console.error('問題一覧の取得に失敗しました:', error);
+
+        return res.status(500).json({
+            message: '問題一覧の取得に失敗しました。'
+        });
+    }
+});
 
     /**
      * GET /api/rankings/:type

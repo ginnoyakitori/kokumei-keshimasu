@@ -1,5 +1,6 @@
 // controllers/playerController.js (PostgreSQL接続プールの初期化は省略)
-
+const db = require('../db');
+const pool = db.pool;
 // プレイヤーIDから情報を取得するコアロジックを修正
 const getPlayerDetailsById = async (playerId) => {
     const query = `
