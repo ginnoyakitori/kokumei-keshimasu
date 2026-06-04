@@ -29,18 +29,15 @@ async function initializeDatabase() {
         console.log('✅ Table "players" created or already exists.');
 
         // --- 2. puzzles テーブルの定義 ---
-        const createPlayersTable = `
-            CREATE TABLE IF NOT EXISTS players (
+        const createPuzzlesTable = `
+            CREATE TABLE IF NOT EXISTS puzzles (
                 id SERIAL PRIMARY KEY,
-                nickname VARCHAR(20) UNIQUE NOT NULL,
-                passcode_hash TEXT NOT NULL,
-                country_clears INTEGER DEFAULT 0,
-                capital_clears INTEGER DEFAULT 0,
-                cleared_country_ids JSONB DEFAULT '[]'::jsonb,
-                cleared_capital_ids JSONB DEFAULT '[]'::jsonb,
+                mode VARCHAR(10) NOT NULL CHECK (mode IN ('country', 'capital')),
+                board_data JSONB NOT NULL,
+                creator VARCHAR(255) NOT NULL,
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
-      `;
+        `;
         await db.query(createPuzzlesTable);
         console.log('✅ Table "puzzles" created or already exists.');
         

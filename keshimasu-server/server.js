@@ -369,8 +369,9 @@ const CAPITAL_WORDS = require('./data/capital_words.json');
     });
 
     // --- サーバー起動 ---
-    app.listen(PORT, () => {
-        console.log(`🚀 サーバーはポート ${PORT} で稼働中です！`);
+    
+app.listen(PORT, () => {
+        console.log(`✅ Server is running on port ${PORT}`);
     });
 
 })().catch(err => {
