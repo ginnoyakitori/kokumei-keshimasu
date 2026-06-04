@@ -10,14 +10,14 @@ const updateScore = async (req, res) => {
         });
     }
 
-    if (!['country', 'capital'].includes(mode)) {
+    if (!isValidMode(mode)) {
         return res.status(400).json({
             message: '無効なモードです。'
         });
     }
 
-    const clearField = mode === 'country' ? 'country_clears' : 'capital_clears';
-    const idListField = mode === 'country' ? 'cleared_country_ids' : 'cleared_capital_ids';
+    const clearField = getClearField(mode);
+    const idListField = getClearedColumn(mode);
     const numericPuzzleId = Number(puzzleId);
 
     if (!Number.isInteger(numericPuzzleId)) {

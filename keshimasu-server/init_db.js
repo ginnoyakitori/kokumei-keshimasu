@@ -1,11 +1,13 @@
 // keshimasu-server/init_db.js
 // PostgreSQLのテーブルを初期化するためのスクリプト
-// 既存データを消さず、足りないカラムだけ追加する安全版
+// 国名ケシマス + 首都名ケシマス + ポケモンケシマス 対応版
+// 既存データを消さず、足りないカラムだけ追加します
 
 const db = require('./db');
 
 const COUNTRY_PUZZLES = require('./data/country_puzzles.json');
 const CAPITAL_PUZZLES = require('./data/capital_puzzles.json');
+const POKEMON_PUZZLES = require('./data/pokemon_puzzles.json');
 
 async function columnExists(tableName, columnName) {
     const result = await db.query(
@@ -33,14 +35,19 @@ async function initializeDatabase() {
                 passcode_hash TEXT NOT NULL,
                 country_clears INTEGER DEFAULT 0,
                 capital_clears INTEGER DEFAULT 0,
+                pokemon_clears INTEGER DEFAULT 0,
                 cleared_country_ids JSONB DEFAULT '[]'::jsonb,
                 cleared_capital_ids JSONB DEFAULT '[]'::jsonb,
+                cleared_pokemon_ids JSONB DEFAULT '[]'::jsonb,
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
         `);
 
         console.log('✅ Table "players" created or already exists.');
 
+        // ------------------------------
+        // 既存 players テーブルに足りないカラムを追加
+        // ------------------------------
         await db.query(`
             ALTER TABLE players
             ADD COLUMN IF NOT EXISTS country_clears INTEGER DEFAULT 0;
@@ -49,6 +56,11 @@ async function initializeDatabase() {
         await db.query(`
             ALTER TABLE players
             ADD COLUMN IF NOT EXISTS capital_clears INTEGER DEFAULT 0;
+        `);
+
+        await db.query(`
+            ALTER TABLE players
+            ADD COLUMN IF NOT EXISTS pokemon_clears INTEGER DEFAULT 0;
         `);
 
         await db.query(`
@@ -63,9 +75,17 @@ async function initializeDatabase() {
 
         await db.query(`
             ALTER TABLE players
+            ADD COLUMN IF NOT EXISTS cleared_pokemon_ids JSONB DEFAULT '[]'::jsonb;
+        `);
+
+        await db.query(`
+            ALTER TABLE players
             ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
         `);
 
+        // ------------------------------
+        // players NULL対策
+        // ------------------------------
         await db.query(`
             UPDATE players
             SET country_clears = 0
@@ -80,6 +100,12 @@ async function initializeDatabase() {
 
         await db.query(`
             UPDATE players
+            SET pokemon_clears = 0
+            WHERE pokemon_clears IS NULL;
+        `);
+
+        await db.query(`
+            UPDATE players
             SET cleared_country_ids = '[]'::jsonb
             WHERE cleared_country_ids IS NULL;
         `);
@@ -88,6 +114,18 @@ async function initializeDatabase() {
             UPDATE players
             SET cleared_capital_ids = '[]'::jsonb
             WHERE cleared_capital_ids IS NULL;
+        `);
+
+        await db.query(`
+            UPDATE players
+            SET cleared_pokemon_ids = '[]'::jsonb
+            WHERE cleared_pokemon_ids IS NULL;
+        `);
+
+        await db.query(`
+            UPDATE players
+            SET created_at = CURRENT_TIMESTAMP
+            WHERE created_at IS NULL;
         `);
 
         console.log('✅ Table "players" columns checked.');
@@ -104,6 +142,9 @@ async function initializeDatabase() {
 
         console.log('✅ Table "puzzles" created or already exists.');
 
+        // ------------------------------
+        // 既存 puzzles テーブルに足りないカラムを追加
+        // ------------------------------
         await db.query(`
             ALTER TABLE puzzles
             ADD COLUMN IF NOT EXISTS mode VARCHAR(20);
@@ -132,15 +173,16 @@ async function initializeDatabase() {
         console.log('✅ Table "puzzles" columns added if missing.');
 
         // ------------------------------
-        // 既存の board_data カラム対応
-        // 古いDBで board_data NOT NULL が残っていると、
-        // data だけINSERTしたときにエラーになるため NOT NULL を外す
+        // 古いDBの board_data / puzzle_data / board 対応
+        // 既存データを data にコピーします
         // ------------------------------
         const hasBoardData = await columnExists('puzzles', 'board_data');
         const hasPuzzleData = await columnExists('puzzles', 'puzzle_data');
         const hasBoard = await columnExists('puzzles', 'board');
 
         if (hasBoardData) {
+            // 古い board_data に NOT NULL が残っていると、
+            // 新しい INSERT が失敗するため NOT NULL を外します
             await db.query(`
                 ALTER TABLE puzzles
                 ALTER COLUMN board_data DROP NOT NULL;
@@ -179,7 +221,9 @@ async function initializeDatabase() {
             console.log('✅ Existing board copied to data.');
         }
 
-        // source_id が空なら既存 id を入れる
+        // ------------------------------
+        // puzzles 既存データの補正
+        // ------------------------------
         await db.query(`
             UPDATE puzzles
             SET source_id = id
@@ -213,7 +257,8 @@ async function initializeDatabase() {
         console.log('✅ Existing puzzle data preserved and normalized.');
 
         // ------------------------------
-        // 重複防止インデックス
+        // mode + source_id の重複防止
+        // country / capital / pokemon で同じ source_id があっても共存可能
         // ------------------------------
         await db.query(`
             CREATE UNIQUE INDEX IF NOT EXISTS puzzles_mode_source_id_unique
@@ -224,7 +269,8 @@ async function initializeDatabase() {
 
         // ------------------------------
         // 初期パズル投入
-        // 既存データを消さず、同じ mode + source_id があれば更新
+        // JSON側の id は source_id として保存
+        // DB上の id は SERIAL の一意IDとして使います
         // ------------------------------
         const insertPuzzleQuery = `
             INSERT INTO puzzles (
@@ -262,8 +308,21 @@ async function initializeDatabase() {
 
         console.log(`✅ Capital puzzles initialized: ${CAPITAL_PUZZLES.length}`);
 
-        // board_data がある古いDBの場合、data の内容を board_data にも同期しておく
-        // 古いコードが board_data を参照していても壊れにくくするため
+        for (const puzzle of POKEMON_PUZZLES) {
+            await db.query(insertPuzzleQuery, [
+                'pokemon',
+                puzzle.id,
+                JSON.stringify(puzzle.data),
+                puzzle.creator || '銀の焼き鳥'
+            ]);
+        }
+
+        console.log(`✅ Pokemon puzzles initialized: ${POKEMON_PUZZLES.length}`);
+
+        // ------------------------------
+        // 古い board_data カラムがある場合は data を同期
+        // 古いコードが board_data を参照しても壊れにくくするため
+        // ------------------------------
         if (hasBoardData) {
             await db.query(`
                 UPDATE puzzles
@@ -275,6 +334,9 @@ async function initializeDatabase() {
             console.log('✅ data synced back to board_data where needed.');
         }
 
+        // ------------------------------
+        // SERIAL の採番位置を現在の最大IDに合わせる
+        // ------------------------------
         await db.query(`
             SELECT setval(
                 pg_get_serial_sequence('puzzles', 'id'),

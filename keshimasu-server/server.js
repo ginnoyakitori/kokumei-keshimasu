@@ -11,16 +11,92 @@ const { hashPasscode, comparePasscode } = require('./utils/auth');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ------------------------------
 // 辞書データ
+// ------------------------------
 const COUNTRY_WORDS = require('./data/country_words.json');
 const CAPITAL_WORDS = require('./data/capital_words.json');
+const POKEMON_WORDS = require('./data/pokemon_words.json');
 
+// ------------------------------
 // ミドルウェア
+// ------------------------------
 app.use(cors());
 app.use(express.json());
 
 // 必要なら静的ファイル配信
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ------------------------------
+// モード共通ヘルパー
+// ------------------------------
+const VALID_MODES = ['country', 'capital', 'pokemon'];
+
+function isValidMode(mode) {
+    return VALID_MODES.includes(mode);
+}
+
+function getClearedColumn(mode) {
+    if (mode === 'country') return 'cleared_country_ids';
+    if (mode === 'capital') return 'cleared_capital_ids';
+    if (mode === 'pokemon') return 'cleared_pokemon_ids';
+    return null;
+}
+
+function getClearField(mode) {
+    if (mode === 'country') return 'country_clears';
+    if (mode === 'capital') return 'capital_clears';
+    if (mode === 'pokemon') return 'pokemon_clears';
+    return null;
+}
+
+// ------------------------------
+// トップページ
+// ------------------------------
+app.get('/', (req, res) => {
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="ja">
+        <head>
+            <meta charset="UTF-8">
+            <title>ケシマス API</title>
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    background: #1c1c1c;
+                    color: #f0f0f0;
+                    padding: 30px;
+                    line-height: 1.7;
+                }
+                h1 {
+                    color: #FFD700;
+                }
+                a {
+                    color: #FFD700;
+                }
+                code {
+                    background: #333;
+                    padding: 2px 6px;
+                    border-radius: 4px;
+                }
+            </style>
+        </head>
+        <body>
+            <h1>ケシマス API は起動中です</h1>
+            <p>APIサーバーは正常に動作しています。</p>
+            <ul>
+                <li><a href="/api/health">/api/health</a></li>
+                <li><a href="/api/puzzles/country">/api/puzzles/country</a></li>
+                <li><a href="/api/puzzles/capital">/api/puzzles/capital</a></li>
+                <li><a href="/api/puzzles/pokemon">/api/puzzles/pokemon</a></li>
+                <li><a href="/api/words/country">/api/words/country</a></li>
+                <li><a href="/api/words/capital">/api/words/capital</a></li>
+                <li><a href="/api/words/pokemon">/api/words/pokemon</a></li>
+            </ul>
+        </body>
+        </html>
+    `);
+});
 
 // ------------------------------
 // ヘルスチェック
@@ -36,6 +112,7 @@ app.get('/api/health', (req, res) => {
 // ワード一覧取得
 // GET /api/words/country
 // GET /api/words/capital
+// GET /api/words/pokemon
 // ------------------------------
 app.get('/api/words/:mode', (req, res) => {
     const { mode } = req.params;
@@ -46,6 +123,10 @@ app.get('/api/words/:mode', (req, res) => {
 
     if (mode === 'capital') {
         return res.json(CAPITAL_WORDS);
+    }
+
+    if (mode === 'pokemon') {
+        return res.json(POKEMON_WORDS);
     }
 
     return res.status(400).json({
@@ -84,8 +165,10 @@ app.post('/api/player/register', async (req, res) => {
                 passcode_hash,
                 country_clears,
                 capital_clears,
+                pokemon_clears,
                 cleared_country_ids,
-                cleared_capital_ids
+                cleared_capital_ids,
+                cleared_pokemon_ids
             FROM players
             WHERE nickname = $1;
             `,
@@ -112,8 +195,10 @@ app.post('/api/player/register', async (req, res) => {
                     nickname: player.nickname,
                     country_clears: player.country_clears || 0,
                     capital_clears: player.capital_clears || 0,
+                    pokemon_clears: player.pokemon_clears || 0,
                     cleared_country_ids: player.cleared_country_ids || [],
-                    cleared_capital_ids: player.cleared_capital_ids || []
+                    cleared_capital_ids: player.cleared_capital_ids || [],
+                    cleared_pokemon_ids: player.cleared_pokemon_ids || []
                 }
             });
         }
@@ -128,17 +213,21 @@ app.post('/api/player/register', async (req, res) => {
                 passcode_hash,
                 country_clears,
                 capital_clears,
+                pokemon_clears,
                 cleared_country_ids,
-                cleared_capital_ids
+                cleared_capital_ids,
+                cleared_pokemon_ids
             )
-            VALUES ($1, $2, 0, 0, '[]'::jsonb, '[]'::jsonb)
+            VALUES ($1, $2, 0, 0, 0, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb)
             RETURNING
                 id,
                 nickname,
                 country_clears,
                 capital_clears,
+                pokemon_clears,
                 cleared_country_ids,
-                cleared_capital_ids;
+                cleared_capital_ids,
+                cleared_pokemon_ids;
             `,
             [finalNickname, passcodeHash]
         );
@@ -153,8 +242,10 @@ app.post('/api/player/register', async (req, res) => {
                 nickname: newPlayer.nickname,
                 country_clears: newPlayer.country_clears || 0,
                 capital_clears: newPlayer.capital_clears || 0,
+                pokemon_clears: newPlayer.pokemon_clears || 0,
                 cleared_country_ids: newPlayer.cleared_country_ids || [],
-                cleared_capital_ids: newPlayer.cleared_capital_ids || []
+                cleared_capital_ids: newPlayer.cleared_capital_ids || [],
+                cleared_pokemon_ids: newPlayer.cleared_pokemon_ids || []
             }
         });
 
@@ -182,8 +273,10 @@ app.get('/api/player/:id', async (req, res) => {
                 nickname,
                 country_clears,
                 capital_clears,
+                pokemon_clears,
                 cleared_country_ids,
-                cleared_capital_ids
+                cleared_capital_ids,
+                cleared_pokemon_ids
             FROM players
             WHERE id = $1;
             `,
@@ -204,8 +297,10 @@ app.get('/api/player/:id', async (req, res) => {
                 nickname: player.nickname,
                 country_clears: player.country_clears || 0,
                 capital_clears: player.capital_clears || 0,
+                pokemon_clears: player.pokemon_clears || 0,
                 cleared_country_ids: player.cleared_country_ids || [],
-                cleared_capital_ids: player.cleared_capital_ids || []
+                cleared_capital_ids: player.cleared_capital_ids || [],
+                cleared_pokemon_ids: player.cleared_pokemon_ids || []
             }
         });
 
@@ -222,6 +317,7 @@ app.get('/api/player/:id', async (req, res) => {
 // 問題一覧取得
 // GET /api/puzzles/country
 // GET /api/puzzles/capital
+// GET /api/puzzles/pokemon
 //
 // clear_count を各問題に追加して返す
 // ------------------------------
@@ -229,16 +325,13 @@ app.get('/api/puzzles/:mode', async (req, res) => {
     const { mode } = req.params;
     const { playerId } = req.query;
 
-    if (!['country', 'capital'].includes(mode)) {
+    if (!isValidMode(mode)) {
         return res.status(400).json({
             message: '無効なモードです。'
         });
     }
 
-    const clearedColumn =
-        mode === 'country'
-            ? 'cleared_country_ids'
-            : 'cleared_capital_ids';
+    const clearedColumn = getClearedColumn(mode);
 
     try {
         const puzzlesResult = await db.query(
@@ -304,11 +397,12 @@ app.get('/api/puzzles/:mode', async (req, res) => {
 // ------------------------------
 // 問題登録
 // POST /api/puzzles
+// country / capital / pokemon 対応
 // ------------------------------
 app.post('/api/puzzles', async (req, res) => {
     const { mode, boardData, creator } = req.body;
 
-    if (!['country', 'capital'].includes(mode)) {
+    if (!isValidMode(mode)) {
         return res.status(400).json({
             message: '無効なモードです。'
         });
@@ -362,6 +456,7 @@ app.post('/api/puzzles', async (req, res) => {
 // ------------------------------
 // スコア更新
 // POST /api/score/update
+// country / capital / pokemon 対応
 // ------------------------------
 app.post('/api/score/update', async (req, res) => {
     const { playerId, mode, puzzleId } = req.body;
@@ -372,14 +467,14 @@ app.post('/api/score/update', async (req, res) => {
         });
     }
 
-    if (!['country', 'capital'].includes(mode)) {
+    if (!isValidMode(mode)) {
         return res.status(400).json({
             message: '無効なモードです。'
         });
     }
 
-    const clearField = mode === 'country' ? 'country_clears' : 'capital_clears';
-    const idListField = mode === 'country' ? 'cleared_country_ids' : 'cleared_capital_ids';
+    const clearField = getClearField(mode);
+    const idListField = getClearedColumn(mode);
     const numericPuzzleId = Number(puzzleId);
 
     if (!Number.isInteger(numericPuzzleId)) {
@@ -474,11 +569,12 @@ app.post('/api/score/update', async (req, res) => {
 // GET /api/rankings/total
 // GET /api/rankings/country
 // GET /api/rankings/capital
+// GET /api/rankings/pokemon
 // ------------------------------
 app.get('/api/rankings/:type', async (req, res) => {
     const { type } = req.params;
 
-    if (!['total', 'country', 'capital'].includes(type)) {
+    if (!['total', 'country', 'capital', 'pokemon'].includes(type)) {
         return res.status(400).json({
             message: '無効なランキング種別です。'
         });
@@ -490,8 +586,10 @@ app.get('/api/rankings/:type', async (req, res) => {
         scoreExpression = 'country_clears';
     } else if (type === 'capital') {
         scoreExpression = 'capital_clears';
+    } else if (type === 'pokemon') {
+        scoreExpression = 'pokemon_clears';
     } else {
-        scoreExpression = '(country_clears + capital_clears)';
+        scoreExpression = '(country_clears + capital_clears + pokemon_clears)';
     }
 
     try {
