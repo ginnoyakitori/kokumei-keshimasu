@@ -790,4 +790,197 @@ h2 {
         font-size: 12px;
         padding: 5px;
     }
+    
+}
+/* ======================================= */
+/* 問題一覧画面 */
+/* ======================================= */
+
+#puzzle-list-screen {
+    text-align: center;
+}
+
+#puzzle-list-title {
+    color: var(--color-accent);
+    font-size: 1.7em;
+    font-weight: 900;
+    margin-bottom: 10px;
+    text-shadow: 0 0 6px rgba(255, 215, 0, 0.6);
+}
+
+#puzzle-list-note {
+    color: #bbb;
+    font-size: 0.95em;
+    margin-bottom: 18px;
+}
+
+#puzzle-list-container {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-top: 15px;
+    max-height: 520px;
+    overflow-y: auto;
+    padding: 6px;
+}
+
+/* 1問ごとのカード */
+.puzzle-card {
+    background: linear-gradient(145deg, #3a3a3a, #2d2d2d);
+    border: 1px solid var(--color-border);
+    border-left: 6px solid var(--color-accent);
+    border-radius: 12px;
+    padding: 15px;
+    text-align: left;
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
+    transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+
+.puzzle-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.65), 0 0 8px rgba(255, 215, 0, 0.35);
+}
+
+/* クリア済みカード */
+.puzzle-card.cleared {
+    border-left-color: #6ddf6d;
+    background: linear-gradient(145deg, #334033, #2b332b);
+}
+
+/* 未クリアカード */
+.puzzle-card.uncleared {
+    border-left-color: var(--color-accent);
+}
+
+/* カード上部 */
+.puzzle-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.puzzle-number {
+    color: #fff;
+    font-size: 1.25em;
+    font-weight: 900;
+}
+
+.puzzle-status {
+    font-size: 0.85em;
+    font-weight: bold;
+    padding: 5px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.puzzle-status.cleared {
+    background-color: #2f6b2f;
+    color: #d8ffd8;
+    border: 1px solid #6ddf6d;
+}
+
+.puzzle-status.uncleared {
+    background-color: #5a4a00;
+    color: #fff2a8;
+    border: 1px solid var(--color-accent);
+}
+
+/* 情報行 */
+.puzzle-meta {
+    display: grid;
+    grid-template-columns: 90px 1fr;
+    gap: 7px 10px;
+    margin-bottom: 14px;
+    color: #ddd;
+    font-size: 0.95em;
+}
+
+.puzzle-meta-label {
+    color: #aaa;
+}
+
+.puzzle-meta-value {
+    color: var(--color-text-light);
+    font-weight: bold;
+    word-break: break-word;
+}
+
+.puzzle-clear-count {
+    color: var(--color-accent);
+}
+
+/* 挑戦ボタン */
+.puzzle-challenge-btn {
+    width: 100%;
+    padding: 12px;
+    background: linear-gradient(145deg, var(--color-accent), #c0a800);
+    color: var(--color-primary);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1.05em;
+    font-weight: 900;
+    box-shadow: 0 4px #a08800;
+    transition: all 0.1s;
+}
+
+.puzzle-challenge-btn:hover {
+    background: linear-gradient(145deg, #FFEF95, var(--color-accent));
+    transform: translateY(-1px);
+    box-shadow: 0 5px #a08800;
+}
+
+.puzzle-challenge-btn:active {
+    transform: translateY(3px);
+    box-shadow: 0 1px #a08800;
+}
+
+.puzzle-card.cleared .puzzle-challenge-btn {
+    background: linear-gradient(145deg, #6ddf6d, #3f9f3f);
+    color: #102010;
+    box-shadow: 0 4px #2f6b2f;
+}
+
+.puzzle-card.cleared .puzzle-challenge-btn:hover {
+    background: linear-gradient(145deg, #94ff94, #6ddf6d);
+    box-shadow: 0 5px #2f6b2f;
+}
+
+/* 一覧の空表示 */
+.puzzle-list-empty {
+    background-color: #333;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 20px;
+    color: #bbb;
+}
+
+/* スマホ対応 */
+@media (max-width: 600px) {
+    #puzzle-list-container {
+        max-height: 65vh;
+        padding: 4px;
+        gap: 12px;
+    }
+
+    .puzzle-card {
+        padding: 13px;
+        border-radius: 10px;
+    }
+
+    .puzzle-number {
+        font-size: 1.15em;
+    }
+
+    .puzzle-meta {
+        grid-template-columns: 78px 1fr;
+        font-size: 0.9em;
+    }
+
+    .puzzle-challenge-btn {
+        padding: 13px;
+        font-size: 1em;
+    }
 }
