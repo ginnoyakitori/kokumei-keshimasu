@@ -41,7 +41,6 @@ async function initializeDatabase() {
 
         console.log('✅ Table "players" created or already exists.');
 
-        // 既存 players テーブルに足りないカラムだけ追加
         await db.query(`
             ALTER TABLE players
             ADD COLUMN IF NOT EXISTS country_clears INTEGER DEFAULT 0;
@@ -67,7 +66,6 @@ async function initializeDatabase() {
             ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
         `);
 
-        // NULL対策
         await db.query(`
             UPDATE players
             SET country_clears = 0
@@ -96,7 +94,7 @@ async function initializeDatabase() {
 
         // ------------------------------
         // puzzles テーブル作成
-        // 既に存在する場合は中身を消さない
+        // 既存テーブルがある場合は削除しない
         // ------------------------------
         await db.query(`
             CREATE TABLE IF NOT EXISTS puzzles (
@@ -106,7 +104,6 @@ async function initializeDatabase() {
 
         console.log('✅ Table "puzzles" created or already exists.');
 
-        // 既存 puzzles テーブルに足りないカラムだけ追加
         await db.query(`
             ALTER TABLE puzzles
             ADD COLUMN IF NOT EXISTS mode VARCHAR(20);
@@ -135,15 +132,20 @@ async function initializeDatabase() {
         console.log('✅ Table "puzzles" columns added if missing.');
 
         // ------------------------------
-        // 既存データ保護・移行
-        // data カラムが今回新しく追加された場合、
-        // 既存の board_data / puzzle_data / board などからコピーを試みる
+        // 既存の board_data カラム対応
+        // 古いDBで board_data NOT NULL が残っていると、
+        // data だけINSERTしたときにエラーになるため NOT NULL を外す
         // ------------------------------
         const hasBoardData = await columnExists('puzzles', 'board_data');
         const hasPuzzleData = await columnExists('puzzles', 'puzzle_data');
         const hasBoard = await columnExists('puzzles', 'board');
 
         if (hasBoardData) {
+            await db.query(`
+                ALTER TABLE puzzles
+                ALTER COLUMN board_data DROP NOT NULL;
+            `);
+
             await db.query(`
                 UPDATE puzzles
                 SET data = board_data
@@ -152,6 +154,7 @@ async function initializeDatabase() {
             `);
 
             console.log('✅ Existing board_data copied to data.');
+            console.log('✅ board_data NOT NULL constraint removed safely.');
         }
 
         if (hasPuzzleData) {
@@ -176,54 +179,41 @@ async function initializeDatabase() {
             console.log('✅ Existing board copied to data.');
         }
 
-        // source_id が空なら既存の id を入れる
+        // source_id が空なら既存 id を入れる
         await db.query(`
             UPDATE puzzles
             SET source_id = id
             WHERE source_id IS NULL;
         `);
 
-        // creator が空なら既定値
         await db.query(`
             UPDATE puzzles
             SET creator = '銀の焼き鳥'
             WHERE creator IS NULL OR creator = '';
         `);
 
-        // data が NULL の場合だけ空配列にする
-        // 既存の data は消さない
         await db.query(`
             UPDATE puzzles
             SET data = '[]'::jsonb
             WHERE data IS NULL;
         `);
 
-        // created_at が NULL の場合だけ現在時刻
         await db.query(`
             UPDATE puzzles
             SET created_at = CURRENT_TIMESTAMP
             WHERE created_at IS NULL;
         `);
 
-        console.log('✅ Existing puzzle data preserved and normalized.');
-
-        // ------------------------------
-        // mode が空の既存データについて
-        // ここでは無理に全件 country にしない
-        // ただし source_id と mode のユニーク制約を作るため、
-        // mode が NULL の行には temporary を入れる
-        // ------------------------------
         await db.query(`
             UPDATE puzzles
             SET mode = 'unknown'
             WHERE mode IS NULL OR mode = '';
         `);
 
-        console.log('✅ Existing puzzle mode checked.');
+        console.log('✅ Existing puzzle data preserved and normalized.');
 
         // ------------------------------
-        // mode + source_id の重複防止
-        // 同じ初期IDでも country / capital で共存できる
+        // 重複防止インデックス
         // ------------------------------
         await db.query(`
             CREATE UNIQUE INDEX IF NOT EXISTS puzzles_mode_source_id_unique
@@ -272,9 +262,19 @@ async function initializeDatabase() {
 
         console.log(`✅ Capital puzzles initialized: ${CAPITAL_PUZZLES.length}`);
 
-        // ------------------------------
-        // SERIAL の採番位置調整
-        // ------------------------------
+        // board_data がある古いDBの場合、data の内容を board_data にも同期しておく
+        // 古いコードが board_data を参照していても壊れにくくするため
+        if (hasBoardData) {
+            await db.query(`
+                UPDATE puzzles
+                SET board_data = data
+                WHERE board_data IS NULL
+                  AND data IS NOT NULL;
+            `);
+
+            console.log('✅ data synced back to board_data where needed.');
+        }
+
         await db.query(`
             SELECT setval(
                 pg_get_serial_sequence('puzzles', 'id'),
