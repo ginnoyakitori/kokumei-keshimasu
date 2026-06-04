@@ -85,8 +85,17 @@ function toKatakana(str) {
 
 function isValidGameChar(char) {
     if (char === 'F') return true;
+
+    // ポケモンケシマス用の特殊文字
+    // ニドラン♂、ニドラン♀、ポリゴンZ、ミュウツー等に対応
+    const pokemonSpecialChars = ['♂', '♀', 'Z', '2'];
+
+    if (pokemonSpecialChars.includes(char)) return true;
+
+    // カタカナ1文字
     return /^[\u30a0-\u30ff]$/.test(char);
 }
+
 
 function getModeName(mode) {
     if (mode === 'country') return '国名ケシマス';
