@@ -211,7 +211,81 @@ const CAPITAL_WORDS = require('./data/capital_words.json');
             client.release();
         }
     });
+    app.get('/api/puzzles/:mode', async (req, res) => {
+    const { mode } = req.params;
+    const { playerId } = req.query;
 
+    if (!['country', 'capital'].includes(mode)) {
+        return res.status(400).json({
+            message: '無効なモードです。'
+        });
+    }
+
+    const clearedColumn =
+        mode === 'country'
+            ? 'cleared_country_ids'
+            : 'cleared_capital_ids';
+
+    try {
+        const puzzlesResult = await db.query(
+            `
+            SELECT
+                p.id,
+                p.mode,
+                p.data,
+                p.creator,
+                p.created_at,
+                (
+                    SELECT COUNT(*)
+                    FROM players pl
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM jsonb_array_elements_text(
+                            COALESCE(pl.${clearedColumn}, '[]'::jsonb)
+                        ) AS cleared_id(value)
+                        WHERE cleared_id.value::integer = p.id
+                    )
+                )::integer AS clear_count
+            FROM puzzles p
+            WHERE p.mode = $1
+            ORDER BY p.id ASC;
+            `,
+            [mode]
+        );
+
+        let clearedIds = [];
+        let playerIdentified = false;
+
+        if (playerId) {
+            const playerResult = await db.query(
+                `
+                SELECT ${clearedColumn} AS cleared_ids
+                FROM players
+                WHERE id = $1;
+                `,
+                [playerId]
+            );
+
+            if (playerResult.rows.length > 0) {
+                playerIdentified = true;
+                clearedIds = playerResult.rows[0].cleared_ids || [];
+            }
+        }
+
+        return res.json({
+            puzzles: puzzlesResult.rows,
+            cleared_ids: clearedIds,
+            player_identified: playerIdentified
+        });
+
+    } catch (error) {
+        console.error('問題一覧の取得に失敗しました:', error);
+
+        return res.status(500).json({
+            message: '問題一覧の取得に失敗しました。'
+        });
+    }
+});
     /**
      * GET /api/puzzles/:mode
      * 指定されたモードの問題リストを取得する (古い登録順)
