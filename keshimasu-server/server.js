@@ -1,217 +1,231 @@
 // keshimasu-server/server.js
-require('dotenv').config(); // .envファイルをロード
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const db = require('./db'); // データベース接続設定 (db.pool.connect()を使用するため、poolもエクスポートされている前提)
-const initializeDatabase = require('./init_db'); // DB初期化スクリプト
-const { hashPasscode, comparePasscode } = require('./utils/auth'); // 認証ヘルパー
+const db = require('./db');
+const initializeDatabase = require('./init_db');
+const { hashPasscode, comparePasscode } = require('./utils/auth');
 
 const app = express();
-// 環境変数PORTを使用する (Renderの推奨対応)
 const PORT = process.env.PORT || 3000;
 
-// 辞書データを読み込む (ファイルパスは適宜調整してください)
+// 辞書データ
 const COUNTRY_WORDS = require('./data/country_words.json');
 const CAPITAL_WORDS = require('./data/capital_words.json');
 
+// ミドルウェア
+app.use(cors());
+app.use(express.json());
 
-// --- 初期化と起動 ---
-(async () => {
-    // データベースの初期化（テーブル作成など）をサーバー起動前に実行
-    await initializeDatabase(); 
-    
-    // CORS設定
-    app.use(cors());
-    // JSONリクエストボディの解析を有効化
-    app.use(express.json());
-    
-    // 静的ファイル配信 (keshimasu-clientディレクトリを想定)
-    app.use(express.static(path.join(__dirname, '..', 'keshimasu-client')));
+// 必要なら静的ファイル配信
+app.use(express.static(path.join(__dirname, 'public')));
 
+// ------------------------------
+// ヘルスチェック
+// ------------------------------
+app.get('/api/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        message: 'Keshimasu API is running.'
+    });
+});
 
-    // --- API エンドポイント ---
+// ------------------------------
+// ワード一覧取得
+// GET /api/words/country
+// GET /api/words/capital
+// ------------------------------
+app.get('/api/words/:mode', (req, res) => {
+    const { mode } = req.params;
 
-    /**
-     * POST /api/player/register
-     * ニックネームとパスコードでログインまたは新規登録を行う
-     */
-    app.post('/api/player/register', async (req, res) => {
-        const { nickname, passcode } = req.body;
-        const trimmedNickname = nickname ? nickname.trim().slice(0, 10) : null;
-        
-        if (!trimmedNickname || !passcode) {
-            return res.status(400).json({ message: 'ニックネームとパスコードは必須です。' });
-        }
+    if (mode === 'country') {
+        return res.json(COUNTRY_WORDS);
+    }
 
-        try {
-            // 1. 既存ユーザーのチェック
-            // DBの cleared_ids カラムは JSONB型（PostgreSQL）で保存されている前提
-            const existingPlayer = await db.query(
-                'SELECT id, nickname, passcode_hash, country_clears, capital_clears, cleared_country_ids, cleared_capital_ids FROM players WHERE nickname = $1',
-                [trimmedNickname]
-            );
+    if (mode === 'capital') {
+        return res.json(CAPITAL_WORDS);
+    }
 
-            if (existingPlayer.rows.length > 0) {
-                // ログイン処理 (既存ユーザー)
-                const player = existingPlayer.rows[0];
-                const match = await comparePasscode(passcode, player.passcode_hash);
+    return res.status(400).json({
+        message: '無効なモードです。'
+    });
+});
 
-                if (match) {
-                    // ログイン成功
-                    return res.json({ 
-                        player: { 
-                            id: player.id, 
-                            nickname: player.nickname,
-                            country_clears: player.country_clears,
-                            capital_clears: player.capital_clears,
-                            // DBから取得したJSONをそのまま返す (JSONB型の場合、pgドライバーが自動でパースする可能性があるが、念のためJSON.parseのロジックは残す)
-                            cleared_country_ids: player.cleared_country_ids,
-                            cleared_capital_ids: player.cleared_capital_ids
-                        },
-                        isNewUser: false 
-                    });
-                } else {
-                    // パスコード不一致
-                    return res.status(401).json({ message: 'パスコードが一致しません。', isNewUser: false });
+// ------------------------------
+// プレイヤー登録 / ログイン
+// フロント側は /api/player/register を
+// ログイン・新規登録の両方で使っている想定
+// ------------------------------
+app.post('/api/player/register', async (req, res) => {
+    const { nickname, passcode } = req.body;
+
+    if (!nickname || !passcode) {
+        return res.status(400).json({
+            message: 'ニックネームとパスコードは必須です。'
+        });
+    }
+
+    const finalNickname = String(nickname).trim().slice(0, 20);
+
+    if (!finalNickname) {
+        return res.status(400).json({
+            message: 'ニックネームを入力してください。'
+        });
+    }
+
+    try {
+        const existingResult = await db.query(
+            `
+            SELECT
+                id,
+                nickname,
+                passcode_hash,
+                country_clears,
+                capital_clears,
+                cleared_country_ids,
+                cleared_capital_ids
+            FROM players
+            WHERE nickname = $1;
+            `,
+            [finalNickname]
+        );
+
+        // 既存ユーザーの場合：パスコード確認
+        if (existingResult.rows.length > 0) {
+            const player = existingResult.rows[0];
+
+            const isMatch = await comparePasscode(passcode, player.passcode_hash);
+
+            if (!isMatch) {
+                return res.status(401).json({
+                    message: 'パスコードが違います。'
+                });
+            }
+
+            return res.status(200).json({
+                message: 'ログイン成功です。',
+                isNewUser: false,
+                player: {
+                    id: player.id,
+                    nickname: player.nickname,
+                    country_clears: player.country_clears || 0,
+                    capital_clears: player.capital_clears || 0,
+                    cleared_country_ids: player.cleared_country_ids || [],
+                    cleared_capital_ids: player.cleared_capital_ids || []
                 }
-            } else {
-                // 新規登録処理 (新規ユーザー)
-                const hashedPasscode = await hashPasscode(passcode);
-                
-                // ★★★ 修正箇所: cleared_country_ids, cleared_capital_ids に初期値 '[]'::jsonb を挿入 ★★★
-                const newPlayer = await db.query(
-                    `INSERT INTO players (nickname, passcode_hash, cleared_country_ids, cleared_capital_ids) 
-                     VALUES ($1, $2, '[]'::jsonb, '[]'::jsonb) 
-                     RETURNING id, nickname, country_clears, capital_clears, cleared_country_ids, cleared_capital_ids`,
-                    [trimmedNickname, hashedPasscode]
-                );
-
-                const player = newPlayer.rows[0];
-                // 新規登録成功
-                return res.status(201).json({ 
-                    player: { 
-                        id: player.id, 
-                        nickname: player.nickname,
-                        country_clears: player.country_clears,
-                        capital_clears: player.capital_clears,
-                        cleared_country_ids: player.cleared_country_ids,
-                        cleared_capital_ids: player.cleared_capital_ids
-                    },
-                    isNewUser: true 
-                });
-            }
-
-        } catch (err) {
-            console.error('認証/登録エラー:', err.message);
-            // サーバーエラー
-            res.status(500).json({ message: 'サーバーエラーが発生しました。' });
+            });
         }
-    });
-    
-    /**
-     * GET /api/player/:id
-     * プレイヤーの最新情報を取得（リロード時など）
-     */
-    app.get('/api/player/:id', async (req, res) => {
-        try {
-            const result = await db.query(
-                // プレイヤー情報取得時にクリア済みIDリストを含める
-                'SELECT id, nickname, country_clears, capital_clears, cleared_country_ids, cleared_capital_ids FROM players WHERE id = $1',
-                [req.params.id]
-            );
 
-            if (result.rows.length === 0) {
-                return res.status(404).json({ message: 'プレイヤーが見つかりません。' });
+        // 新規ユーザーの場合：作成
+        const passcodeHash = await hashPasscode(passcode);
+
+        const insertResult = await db.query(
+            `
+            INSERT INTO players (
+                nickname,
+                passcode_hash,
+                country_clears,
+                capital_clears,
+                cleared_country_ids,
+                cleared_capital_ids
+            )
+            VALUES ($1, $2, 0, 0, '[]'::jsonb, '[]'::jsonb)
+            RETURNING
+                id,
+                nickname,
+                country_clears,
+                capital_clears,
+                cleared_country_ids,
+                cleared_capital_ids;
+            `,
+            [finalNickname, passcodeHash]
+        );
+
+        const newPlayer = insertResult.rows[0];
+
+        return res.status(200).json({
+            message: '新規登録成功です。',
+            isNewUser: true,
+            player: {
+                id: newPlayer.id,
+                nickname: newPlayer.nickname,
+                country_clears: newPlayer.country_clears || 0,
+                capital_clears: newPlayer.capital_clears || 0,
+                cleared_country_ids: newPlayer.cleared_country_ids || [],
+                cleared_capital_ids: newPlayer.cleared_capital_ids || []
             }
+        });
 
-            const player = result.rows[0];
-            // JSONB型を使用しているため、pgドライバーが自動でオブジェクト/配列に変換している前提
-            res.json({ player: player });
-        } catch (err) {
-            console.error('プレイヤー取得エラー:', err.message);
-            res.status(500).json({ message: 'サーバーエラー' });
+    } catch (error) {
+        console.error('プレイヤー登録/ログインエラー:', error);
+
+        return res.status(500).json({
+            message: 'プレイヤー登録/ログイン中にエラーが発生しました。'
+        });
+    }
+});
+
+// ------------------------------
+// プレイヤー情報取得
+// GET /api/player/:id
+// ------------------------------
+app.get('/api/player/:id', async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const result = await db.query(
+            `
+            SELECT
+                id,
+                nickname,
+                country_clears,
+                capital_clears,
+                cleared_country_ids,
+                cleared_capital_ids
+            FROM players
+            WHERE id = $1;
+            `,
+            [id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                message: 'プレイヤーが見つかりません。'
+            });
         }
-    });
 
-    /**
-     * POST /api/score/update
-     * プレイヤーのクリアスコアを+1し、クリアした問題IDを記録する
-     */
-    app.post('/api/score/update', async (req, res) => {
-        const { playerId, mode, puzzleId } = req.body;
-        
-        const clearCountColumn = mode === 'country' ? 'country_clears' : 'capital_clears';
-        const clearedIdsColumn = mode === 'country' ? 'cleared_country_ids' : 'cleared_capital_ids';
-        const puzzleIdInt = parseInt(puzzleId);
+        const player = result.rows[0];
 
-        if (!playerId || !['country', 'capital'].includes(mode) || isNaN(puzzleIdInt)) {
-            return res.status(400).json({ message: '無効なリクエストです。' });
-        }
-        
-        // トランザクションを開始し、原子性を確保
-        const client = await db.pool.connect(); // ★★★ db.jsの修正により、ここでエラーが出なくなるはず ★★★
-        try {
-            await client.query('BEGIN');
-            
-            // 1. 現在のクリア済みIDリストを取得し、排他ロックをかける
-            // JSONB型を想定
-            const checkResult = await client.query(
-                `SELECT ${clearCountColumn}, ${clearedIdsColumn} FROM players WHERE id = $1 FOR UPDATE`, // FOR UPDATEでロック
-                [playerId]
-            );
-            
-            if (checkResult.rows.length === 0) {
-                await client.query('ROLLBACK');
-                return res.status(404).json({ message: 'プレイヤーが見つかりません。' });
+        return res.json({
+            player: {
+                id: player.id,
+                nickname: player.nickname,
+                country_clears: player.country_clears || 0,
+                capital_clears: player.capital_clears || 0,
+                cleared_country_ids: player.cleared_country_ids || [],
+                cleared_capital_ids: player.cleared_capital_ids || []
             }
-            
-            const currentRow = checkResult.rows[0];
-            const currentScore = currentRow[clearCountColumn];
-            // JSONB型の場合、pgドライバーは自動でJavaScriptの配列/オブジェクトに変換する
-            let clearedIds = currentRow[clearedIdsColumn] || []; 
-            
-            // 配列の要素を数値に統一
-            clearedIds = clearedIds.map(id => parseInt(id)); 
+        });
 
-            if (clearedIds.includes(puzzleIdInt)) {
-                // 既にクリア済みの場合、スコアは更新せず、現在のスコアを返す
-                await client.query('ROLLBACK');
-                return res.status(200).json({ 
-                    newScore: currentScore, 
-                    message: 'この問題は既にクリア済みです。' 
-                });
-            }
+    } catch (error) {
+        console.error('プレイヤー情報取得エラー:', error);
 
-            // 2. 新しいIDを追加し、JSON文字列に変換
-            clearedIds.push(puzzleIdInt);
-            // JSONBカラムに挿入するため、JSON.stringifyで文字列に戻す
-            const newClearedIdsJson = JSON.stringify(clearedIds);
+        return res.status(500).json({
+            message: 'プレイヤー情報の取得に失敗しました。'
+        });
+    }
+});
 
-            // 3. スコアをインクリメントし、クリア済みIDのJSON文字列を更新
-            const updateResult = await client.query(
-                // PostgreSQLでは、カラム名を文字列展開し、値のインクリメントはDB側で行う
-                `UPDATE players SET ${clearCountColumn} = ${clearCountColumn} + 1, ${clearedIdsColumn} = $2 WHERE id = $1 RETURNING ${clearCountColumn} AS newscore`,
-                [playerId, newClearedIdsJson]
-            );
-            
-            await client.query('COMMIT');
-            
-            if (updateResult.rows.length === 0) {
-                return res.status(404).json({ message: 'プレイヤーが見つかりません。' });
-            }
-
-            // RETURNING句で newscore とエイリアスを付けたため、.newscore でアクセス
-            res.json({ newScore: updateResult.rows[0].newscore, message: 'スコアを更新しました。' });
-        } catch (err) {
-            await client.query('ROLLBACK');
-            console.error('❌ スコア更新エラー:', err.message);
-            res.status(500).json({ message: 'サーバーエラーによりスコアを更新できませんでした。' });
-        } finally {
-            client.release();
-        }
-    });
-    app.get('/api/puzzles/:mode', async (req, res) => {
+// ------------------------------
+// 問題一覧取得
+// GET /api/puzzles/country
+// GET /api/puzzles/capital
+//
+// clear_count を各問題に追加して返す
+// ------------------------------
+app.get('/api/puzzles/:mode', async (req, res) => {
     const { mode } = req.params;
     const { playerId } = req.query;
 
@@ -286,142 +300,243 @@ const CAPITAL_WORDS = require('./data/capital_words.json');
         });
     }
 });
-    /**
-     * GET /api/puzzles/:mode
-     * 指定されたモードの問題リストを取得する (古い登録順)
-     * クライアント側でクリア済みIDを参照してフィルタリングする責務を持つ
-     */
-    app.get('/api/puzzles/:mode', async (req, res) => {
-        const { mode } = req.params;
-        const { playerId } = req.query; // playerIdをクエリパラメータから取得
-        
-        if (!['country', 'capital'].includes(mode)) {
-            return res.status(400).json({ message: '無効なモードです。' });
-        }
-        
-        let clearedIds = [];
-        let playerIdentified = false; // プレイヤーが特定できたかを示すフラグ
-        
-        // 1. プレイヤーIDがあれば、クリア済みIDを取得
-        if (playerId) {
-            try {
-                const clearedIdsColumn = mode === 'country' ? 'cleared_country_ids' : 'cleared_capital_ids';
-                const playerResult = await db.query(
-                    `SELECT ${clearedIdsColumn} FROM players WHERE id = $1`,
-                    [playerId]
-                );
 
-                if (playerResult.rows.length > 0) {
-                    const clearedIdsData = playerResult.rows[0][clearedIdsColumn];
-                    // JSONB型の場合、clearedIdsDataは既に配列であるため、その値をセット
-                    clearedIds = clearedIdsData || []; 
-                    playerIdentified = true; // プレイヤー特定成功
-                }
-            } catch (err) {
-                console.error('クリア済みID取得エラー:', err.message);
-                // エラーが発生した場合も、問題リストの取得は続行（clearedIdsは[]のまま）
-            }
-        }
+// ------------------------------
+// 問題登録
+// POST /api/puzzles
+// ------------------------------
+app.post('/api/puzzles', async (req, res) => {
+    const { mode, boardData, creator } = req.body;
 
-        // 2. 問題リスト全体を取得 (フィルタリングはクライアントに任せるため、ここでは全ての対象問題を取得)
-        try {
-            // modeに一致する全ての問題を取得する
-            const sql = 'SELECT id, board_data AS data, creator FROM puzzles WHERE mode = $1 ORDER BY created_at ASC';
-            
-            const result = await db.query(sql, [mode]);
-            
-            // 3. レスポンスにすべての情報を含めて返す
-            res.json({ 
-                puzzles: result.rows, 
-                cleared_ids: clearedIds,
-                player_identified: playerIdentified, // フラグをクライアントに返す
-                message: playerIdentified ? '問題リストと最新のクリア済みIDを返却しました。' : 'ゲスト/未ログイン用の全問題リストを返却しました。'
+    if (!['country', 'capital'].includes(mode)) {
+        return res.status(400).json({
+            message: '無効なモードです。'
+        });
+    }
+
+    if (!boardData) {
+        return res.status(400).json({
+            message: 'boardData は必須です。'
+        });
+    }
+
+    const finalCreator = creator || '名無し';
+
+    try {
+        const result = await db.query(
+            `
+            INSERT INTO puzzles (
+                mode,
+                data,
+                creator
+            )
+            VALUES ($1, $2::jsonb, $3)
+            RETURNING
+                id,
+                mode,
+                data,
+                creator,
+                created_at;
+            `,
+            [
+                mode,
+                JSON.stringify(boardData),
+                finalCreator
+            ]
+        );
+
+        return res.status(201).json({
+            message: '問題を登録しました。',
+            puzzle: result.rows[0]
+        });
+
+    } catch (error) {
+        console.error('問題登録エラー:', error);
+
+        return res.status(500).json({
+            message: '問題の登録に失敗しました。'
+        });
+    }
+});
+
+// ------------------------------
+// スコア更新
+// POST /api/score/update
+// ------------------------------
+app.post('/api/score/update', async (req, res) => {
+    const { playerId, mode, puzzleId } = req.body;
+
+    if (!playerId || !mode || puzzleId === undefined || puzzleId === null) {
+        return res.status(400).json({
+            message: 'playerId, mode, puzzleId は必須です。'
+        });
+    }
+
+    if (!['country', 'capital'].includes(mode)) {
+        return res.status(400).json({
+            message: '無効なモードです。'
+        });
+    }
+
+    const clearField = mode === 'country' ? 'country_clears' : 'capital_clears';
+    const idListField = mode === 'country' ? 'cleared_country_ids' : 'cleared_capital_ids';
+    const numericPuzzleId = Number(puzzleId);
+
+    if (!Number.isInteger(numericPuzzleId)) {
+        return res.status(400).json({
+            message: 'puzzleId が不正です。'
+        });
+    }
+
+    let client;
+
+    try {
+        client = await db.pool.connect();
+
+        await client.query('BEGIN');
+
+        const checkResult = await client.query(
+            `
+            SELECT
+                ${idListField},
+                ${clearField}
+            FROM players
+            WHERE id = $1
+            FOR UPDATE;
+            `,
+            [playerId]
+        );
+
+        if (checkResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+
+            return res.status(404).json({
+                message: 'プレイヤーが見つかりません。'
             });
-
-        } catch (err) {
-            console.error('問題リスト取得エラー:', err.message);
-            res.status(500).json({ message: 'サーバーエラーにより問題を取得できませんでした。' });
         }
-    });
 
-    /**
-     * GET /api/rankings/:type
-     * ランキングデータを取得
-     */
-    app.get('/api/rankings/:type', async (req, res) => {
-        const { type } = req.params;
-        let column;
+        const player = checkResult.rows[0];
+        const clearedIds = (player[idListField] || []).map(id => Number(id));
 
-        if (type === 'country') column = 'country_clears';
-        else if (type === 'capital') column = 'capital_clears';
-        else if (type === 'total') column = 'country_clears + capital_clears';
-        else return res.status(400).json({ message: '無効なランキングタイプです。' });
+        if (clearedIds.includes(numericPuzzleId)) {
+            await client.query('COMMIT');
 
-        try {
-            // SQLクエリを一行で記述し、不正なスペースの混入を防ぐ
-            const result = await db.query(
-                `SELECT nickname, ${column} AS score FROM players ORDER BY score DESC, created_at ASC LIMIT 100`
-            );
-            
-            // 取得したデータに順位(rank)を付与して返す
-            const rankings = result.rows.map((row, index) => ({
-                rank: index + 1,
-                nickname: row.nickname,
-                score: row.score
-            }));
-
-            res.json(rankings);
-        } catch (err) {
-            console.error('ランキング取得エラー:', err.message);
-            res.status(500).json({ message: 'サーバーエラーによりランキングを取得できませんでした。' });
-        }
-    });
-
-    /**
-     * GET /api/words/:mode
-     * 利用可能な国名/首都名リストをクライアントに提供
-     */
-    app.get('/api/words/:mode', (req, res) => {
-        const { mode } = req.params;
-        if (mode === 'country') {
-            return res.json(COUNTRY_WORDS);
-        } else if (mode === 'capital') {
-            return res.json(CAPITAL_WORDS);
-        }
-        return res.status(400).json({ message: '無効なモードです。' });
-    });
-
-    /**
-     * POST /api/puzzles
-     * ユーザーが制作した問題をデータベースに登録する
-     */
-    app.post('/api/puzzles', async (req, res) => {
-        const { mode, boardData, creator } = req.body;
-        
-        if (!mode || !boardData || !creator) {
-            return res.status(400).json({ message: '問題のデータが不完全です。' });
-        }
-        
-        try {
-            // boardData はオブジェクトとして渡されるが、DBのJSONBカラムに格納するために文字列化
-            const newPuzzle = await db.query(
-                'INSERT INTO puzzles (mode, board_data, creator) VALUES ($1, $2, $3) RETURNING id, creator',
-                [mode, JSON.stringify(boardData), creator]
-            );
-
-            res.status(201).json({ 
-                puzzle: { id: newPuzzle.rows[0].id, creator: newPuzzle.rows[0].creator }, 
-                message: '問題が正常に登録されました。'
+            return res.status(200).json({
+                message: 'この問題は既にクリア済みです。',
+                newScore: player[clearField]
             });
-        } catch (err) {
-            console.error('問題登録エラー:', err.message);
-            res.status(500).json({ message: '問題の登録中にサーバーエラーが発生しました。' });
         }
-    });
 
-    // --- サーバー起動 ---
+        clearedIds.push(numericPuzzleId);
+
+        const updateResult = await client.query(
+            `
+            UPDATE players
+            SET
+                ${idListField} = $2::jsonb,
+                ${clearField} = jsonb_array_length($2::jsonb)
+            WHERE id = $1
+            RETURNING ${clearField} AS "newScore";
+            `,
+            [
+                playerId,
+                JSON.stringify(clearedIds)
+            ]
+        );
+
+        await client.query('COMMIT');
+
+        return res.status(200).json({
+            message: 'スコアとクリア済み問題IDを更新しました。',
+            newScore: updateResult.rows[0].newScore
+        });
+
+    } catch (error) {
+        if (client) {
+            await client.query('ROLLBACK');
+        }
+
+        console.error('スコア更新エラー:', error);
+
+        return res.status(500).json({
+            message: 'スコア更新中にエラーが発生しました。'
+        });
+
+    } finally {
+        if (client) {
+            client.release();
+        }
+    }
+});
+
+// ------------------------------
+// ランキング取得
+// GET /api/rankings/total
+// GET /api/rankings/country
+// GET /api/rankings/capital
+// ------------------------------
+app.get('/api/rankings/:type', async (req, res) => {
+    const { type } = req.params;
+
+    if (!['total', 'country', 'capital'].includes(type)) {
+        return res.status(400).json({
+            message: '無効なランキング種別です。'
+        });
+    }
+
+    let scoreExpression;
+
+    if (type === 'country') {
+        scoreExpression = 'country_clears';
+    } else if (type === 'capital') {
+        scoreExpression = 'capital_clears';
+    } else {
+        scoreExpression = '(country_clears + capital_clears)';
+    }
+
+    try {
+        const result = await db.query(
+            `
+            SELECT
+                ROW_NUMBER() OVER (
+                    ORDER BY ${scoreExpression} DESC, created_at ASC
+                ) AS rank,
+                nickname,
+                ${scoreExpression} AS score
+            FROM players
+            ORDER BY ${scoreExpression} DESC, created_at ASC
+            LIMIT 100;
+            `
+        );
+
+        return res.json(result.rows);
+
+    } catch (error) {
+        console.error('ランキング取得エラー:', error);
+
+        return res.status(500).json({
+            message: 'ランキングの取得に失敗しました。'
+        });
+    }
+});
+
+// ------------------------------
+// 404
+// ------------------------------
+app.use((req, res) => {
+    res.status(404).json({
+        message: 'Not Found'
+    });
+});
+
+// ------------------------------
+// 初期化と起動
+// ------------------------------
+(async () => {
+    await initializeDatabase();
+
     app.listen(PORT, () => {
-        console.log(`🚀 サーバーはポート ${PORT} で稼働中です！`);
+        console.log(`✅ Server is running on port ${PORT}`);
     });
 
 })().catch(err => {
