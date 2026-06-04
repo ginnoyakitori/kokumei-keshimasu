@@ -25,6 +25,7 @@ let isComposing = false;
 
 let currentPlayerNickname = null; // 認証前はnull
 let currentPlayerId = null; 
+let currentListMode = 'country';
 // playerStatsを定義。ホーム画面のクリア数表示はこれを参照する
 let playerStats = { 
     country_clears: 0,
@@ -34,13 +35,15 @@ let playerStats = {
 
 // DOM要素の取得
 const screens = {
-    auth: document.getElementById('auth-screen'), 
-    home: document.getElementById('home-screen'),
-    mainGame: document.getElementById('main-game-screen'),
-    create: document.getElementById('create-puzzle-screen'),
-    ranking: document.getElementById('ranking-screen'),
-    wordList: document.getElementById('word-list-screen')
+    auth: document.getElementById('auth-screen'), 
+    home: document.getElementById('home-screen'),
+    mainGame: document.getElementById('main-game-screen'),
+    create: document.getElementById('create-puzzle-screen'),
+    ranking: document.getElementById('ranking-screen'),
+    wordList: document.getElementById('word-list-screen'),
+    puzzleList: document.getElementById('puzzle-list-screen')
 };
+
 const appTitleElement = document.getElementById('app-title'); 
 const boardElement = document.getElementById('board');
 const eraseButton = document.getElementById('erase-button');
@@ -350,6 +353,113 @@ function updateHomeProblemCount() {
     document.getElementById('capital-problem-count').textContent = `問題数: ${capitalCount}問 (クリア済: ${clearedCapitalCount})`;
 }
 
+function showPuzzleList(isCountry) {
+    const mode = isCountry ? 'country' : 'capital';
+    const modeName = isCountry ? '国名ケシマス' : '首都名ケシマス';
+
+    currentListMode = mode;
+
+    const puzzles = allPuzzles[mode].puzzles || [];
+    const serverClearedIds = allPuzzles[mode].cleared_ids || [];
+    const localClearedIds = getClearedPuzzles(mode);
+    const clearedIds = new Set([...serverClearedIds, ...localClearedIds]);
+
+    document.getElementById('puzzle-list-title').textContent = `${modeName} 問題一覧`;
+
+    const container = document.getElementById('puzzle-list-container');
+
+    if (puzzles.length === 0) {
+        container.innerHTML = '<p>問題がまだ登録されていません。</p>';
+        showScreen('puzzleList');
+        return;
+    }
+
+    const sortedPuzzles = [...puzzles].sort((a, b) => a.id - b.id);
+
+    let html = `
+        <table class="ranking-table">
+            <tr>
+                <th>問題番号</th>
+                <th>製作者</th>
+                <th>クリア者数</th>
+                <th>状態</th>
+                <th>挑戦</th>
+            </tr>
+    `;
+
+    sortedPuzzles.forEach((puzzle, index) => {
+        const isCleared = clearedIds.has(puzzle.id);
+
+        // サーバー側で clear_count / clearCount / cleared_count のどれかを返す想定。
+        // まだ無い場合は 0 表示。
+        const clearCount =
+            puzzle.clear_count ??
+            puzzle.clearCount ??
+            puzzle.cleared_count ??
+            0;
+
+        const creator = puzzle.creator || '不明';
+
+        html += `
+            <tr>
+                <td>第 ${index + 1} 問</td>
+                <td>${creator}</td>
+                <td>${clearCount}人</td>
+                <td>${isCleared ? 'クリア済' : '未クリア'}</td>
+                <td>
+                    <button onclick="startPuzzleById('${mode}', ${puzzle.id})">
+                        ${isCleared ? '再挑戦' : '挑戦する'}
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+
+    html += '</table>';
+
+    container.innerHTML = html;
+    showScreen('puzzleList');
+}
+function startPuzzleById(mode, puzzleId) {
+    const isCountry = mode === 'country';
+    const allProblemData = allPuzzles[mode].puzzles || [];
+
+    allProblemData.sort((a, b) => a.id - b.id);
+
+    const selectedPuzzle = allProblemData.find(puzzle => puzzle.id === puzzleId);
+
+    if (!selectedPuzzle) {
+        alert('選択された問題が見つかりませんでした。');
+        showScreen('home');
+        return;
+    }
+
+    currentPuzzleIndex = allProblemData.findIndex(p => p.id === selectedPuzzle.id);
+
+    initialPlayData = JSON.parse(JSON.stringify(selectedPuzzle.data));
+    boardData = JSON.parse(JSON.stringify(selectedPuzzle.data));
+
+    isCountryMode = isCountry;
+    isCreationPlay = false;
+    currentDictionary = isCountry ? COUNTRY_DICT : CAPITAL_DICT;
+
+    selectedCells = [];
+    usedWords = [];
+    eraseButton.disabled = true;
+
+    const modeName = isCountry ? '国名ケシマス' : '首都名ケシマス';
+    document.getElementById('current-game-title').textContent = modeName;
+
+    const displayNumber = currentPuzzleIndex + 1;
+    document.getElementById('problem-number-display').textContent = `第 ${displayNumber} 問`;
+
+    const creatorName = selectedPuzzle.creator || '不明';
+    document.getElementById('creator-display').textContent = `制作者: ${creatorName}`;
+
+    updateStatusDisplay();
+    renderBoard(5);
+    showScreen('mainGame');
+}
 /**
  * ゲームの開始
  */
@@ -1007,10 +1117,14 @@ document.getElementById('btn-logout').addEventListener('click', () => {
 
 // ホーム画面リスナー
 document.getElementById('btn-country-mode').addEventListener('click', () => {
-    startGame(true, false); 
+    showPuzzleList(true);
 });
+
 document.getElementById('btn-capital-mode').addEventListener('click', () => {
-    startGame(false, false); 
+    showPuzzleList(false);
+});
+document.getElementById('btn-puzzle-list-back').addEventListener('click', () => {
+    showScreen('home');
 });
 document.getElementById('btn-create-mode').addEventListener('click', () => {
     if (!currentPlayerNickname || currentPlayerNickname === 'ゲスト') {

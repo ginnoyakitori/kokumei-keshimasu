@@ -43,7 +43,7 @@
                     <li>ワイルドカード: 文字「F」は任意のカタカナ一文字として使用可能です。</li>
                     <li>制限: 同じワードは2回以上使えません。</li>
                     <li>重力: 文字を消去すると、その上の文字が下に落下します。</li>
-                    <li>出題順: 未クリアの問題のうち、登録日時が古いものから出題されます。</li>
+                   <li>問題選択: 問題一覧から好きな問題を選んで挑戦できます。</li>
                     <li>リセット: 消し方を間違えた場合、リセットボタンで最初の盤面に戻れます。</li>
                 </ul>
             </div>
@@ -122,6 +122,19 @@
             
             <button id="btn-create-back" class="secondary-btn">ホームに戻る</button>
         </div>
+        
+        <div id="puzzle-list-screen" class="screen" style="display:none;">
+    <h2 id="puzzle-list-title">問題一覧</h2>
+
+    <p id="puzzle-list-note">
+        挑戦したい問題を選んでください。
+    </p>
+
+    <div id="puzzle-list-container">
+    </div>
+
+    <button id="btn-puzzle-list-back" class="secondary-btn">ホームに戻る</button>
+</div>
 
         <div id="ranking-screen" class="screen" style="display:none;">
             <h2>ランキング</h2>
