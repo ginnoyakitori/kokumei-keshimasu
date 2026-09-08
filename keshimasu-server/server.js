@@ -3,12 +3,41 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
+const { rateLimit } = require('express-rate-limit');
 const path = require('path');
 const db = require('./db');
 const initializeDatabase = require('./init_db');
 const { hashPasscode, comparePasscode } = require('./utils/auth');
 
 const app = express();
+
+// Renderのリバースプロキシを1段だけ信頼する
+// express-rate-limitが利用者ごとのIPアドレスを正しく認識するために必要
+app.set('trust proxy', 1);
+
+// API全体に適用する通常のレート制限
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 300,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: {
+        message: 'リクエストが多すぎます。15分ほど待ってから再試行してください。'
+    }
+});
+
+// ログインやユーザー登録などに適用する厳しいレート制限
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 20,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    skipSuccessfulRequests: true,
+    message: {
+        message: '試行回数が多すぎます。15分ほど待ってから再試行してください。'
+    }
+});
+
 const PORT = process.env.PORT || 3000;
 
 // ------------------------------
@@ -139,7 +168,7 @@ app.get('/api/words/:mode', (req, res) => {
 // フロント側は /api/player/register を
 // ログイン・新規登録の両方で使っている想定
 // ------------------------------
-app.post('/api/player/register', async (req, res) => {
+app.post('/api/player/register', authLimiter, async (req, res) => {
     const { nickname, passcode } = req.body;
 
     if (!nickname || !passcode) {
@@ -313,6 +342,8 @@ app.get('/api/player/:id', async (req, res) => {
     }
 });
 
+
+app.use('/api', apiLimiter);
 // ------------------------------
 // 問題一覧取得
 // GET /api/puzzles/country
