@@ -1,53 +1,72 @@
 // keshimasu-server/db.js
-const { Pool } = require('pg');
-const { URL } = require('url'); // URLを解析するために追加
 
-// 環境変数から接続情報を取得
+const { Pool } = require('pg');
+
+// 必須環境変数を確認
 const connectionString = process.env.DATABASE_URL;
 
-// =========================================================
-// ★★★ デバッグログの追加 ★★★
-// =========================================================
-console.log('--- DB接続デバッグ情報 ---');
 if (!connectionString) {
-    console.error('⚠️ エラー: DATABASE_URLが設定されていません。');
-} else {
-    try {
-        const parsedUrl = new URL(connectionString);
-        const passwordLength = parsedUrl.password ? parsedUrl.password.length : 0;
-        
-        // パスワードを直接表示せず、長さと存在のみ確認
-        console.log(`✅ DATABASE_URLは読み込まれています。（長さ: ${connectionString.length}）`);
-        console.log(`🔑 パスワードの存在: ${parsedUrl.password ? 'あり' : 'なし'}`);
-        console.log(`🔑 パスワードの長さ: ${passwordLength}`);
-        
-        if (passwordLength === 0 && connectionString.includes('@')) {
-            console.error('❌ 警告: 接続文字列にパスワードがない、または正しく解析されていません。');
-        }
-        
-    } catch (e) {
-        console.error('❌ エラー: DATABASE_URLの形式が不正です。', e.message);
-    }
+    throw new Error(
+        'DATABASE_URLが設定されていません。環境変数を確認してください。'
+    );
 }
-console.log('---------------------------');
-// =========================================================
 
-// 環境変数から接続情報を取得
+// 接続文字列の形式だけを検証する
+// URL、パスワード、ホスト名などはログに出力しない
+try {
+    new URL(connectionString);
+} catch {
+    throw new Error(
+        'DATABASE_URLの形式が正しくありません。環境変数を確認してください。'
+    );
+}
+
+// PostgreSQL接続プール
 const pool = new Pool({
-    connectionString: connectionString,
-    // 本番環境（production）でのSSL接続設定
-    // Render/Neonの組み合わせでは通常 rejectUnauthorized: false が必要です
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    connectionString,
+
+    // NeonはSSL接続を使用する
+    ssl: {
+        rejectUnauthorized: false
+    },
+
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000
 });
 
-// 接続テスト
-pool.query('SELECT NOW()')
-    .then(res => console.log('✅ PostgreSQL接続成功:', res.rows[0].now))
-    .catch(err => console.error('❌ PostgreSQL接続エラー:', err.message));
+// アイドル中のDBクライアントで発生したエラーを処理
+pool.on('error', (error) => {
+    // 接続文字列やエラー全文はログへ出力しない
+    console.error(
+        'PostgreSQLプールで予期しないエラーが発生しました。',
+        {
+            name: error.name,
+            code: error.code
+        }
+    );
+});
+
+// 接続確認
+const checkConnection = async () => {
+    try {
+        await pool.query('SELECT 1');
+        console.log('PostgreSQLへの接続を確認しました。');
+    } catch (error) {
+        // error.messageに接続情報が含まれる可能性があるため出力しない
+        console.error(
+            'PostgreSQLへの接続確認に失敗しました。',
+            {
+                name: error.name,
+                code: error.code
+            }
+        );
+    }
+};
+
+checkConnection();
 
 module.exports = {
-    // クエリ実行のラッパー関数
     query: (text, params) => pool.query(text, params),
-    // トランザクションのためにpoolオブジェクト自体をエクスポートに追加
-    pool: pool, 
+    pool
 };
