@@ -1029,3 +1029,13 @@ button {
         max-height: 65vh;
     }
 }
+
+.current-player-row {
+    background-color: #554400;
+    color: #ffd700;
+    font-weight: bold;
+}
+
+.ranking-error {
+    color: red;
+}

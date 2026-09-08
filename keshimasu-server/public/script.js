@@ -76,6 +76,20 @@ const wordListTabs = document.getElementById('word-list-tabs');
 // ----------------------------------------------------
 // ユーティリティ関数
 // ----------------------------------------------------
+
+/**
+ * HTMLへ埋め込む文字列を安全化する
+ * サーバーや利用者から取得した文字列をinnerHTMLへ入れる前に使用する
+ */
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+}
+
 function toKatakana(str) {
     return str.replace(/[\u3041-\u3096]/g, function (match) {
         const chr = match.charCodeAt(0) + 0x60;
@@ -482,7 +496,7 @@ function showPuzzleListByMode(mode) {
             puzzle.cleared_count ??
             0;
 
-        const creator = puzzle.creator || '不明';
+        const creator = escapeHtml(puzzle.creator || '不明');
 
         html += `
             <div class="puzzle-card ${isCleared ? 'cleared' : 'uncleared'}">
@@ -1128,23 +1142,37 @@ const rankingTabs = document.getElementById('ranking-tabs');
 
 async function fetchAndDisplayRanking(type) {
     const container = document.getElementById('ranking-list-container');
+    const nicknameDisplay = document.getElementById(
+        'ranking-nickname-display'
+    );
 
-    container.innerHTML = `<div>${type}ランキングをサーバーから取得中...</div>`;
+    container.classList.remove('ranking-error');
+    container.textContent = `${type}ランキングをサーバーから取得中...`;
+
+    const countryClears = Number(playerStats.country_clears) || 0;
+    const capitalClears = Number(playerStats.capital_clears) || 0;
+    const pokemonClears = Number(playerStats.pokemon_clears) || 0;
 
     const totalScore =
-        (playerStats.country_clears || 0) +
-        (playerStats.capital_clears || 0) +
-        (playerStats.pokemon_clears || 0);
+        countryClears +
+        capitalClears +
+        pokemonClears;
 
-    document.getElementById('ranking-nickname-display').innerHTML =
-        `あなたの記録: <strong>${currentPlayerNickname}</strong> ` +
-        `(国名: ${playerStats.country_clears || 0}, ` +
-        `首都名: ${playerStats.capital_clears || 0}, ` +
-        `ポケモン: ${playerStats.pokemon_clears || 0}, ` +
+    const safeCurrentPlayerNickname = escapeHtml(
+        currentPlayerNickname || 'ゲスト'
+    );
+
+    nicknameDisplay.innerHTML =
+        `あなたの記録: <strong>${safeCurrentPlayerNickname}</strong> ` +
+        `(国名: ${countryClears}, ` +
+        `首都名: ${capitalClears}, ` +
+        `ポケモン: ${pokemonClears}, ` +
         `合計: ${totalScore})`;
 
     try {
-        const response = await fetch(`${API_BASE_URL}/rankings/${type}`);
+        const response = await fetch(
+            `${API_BASE_URL}/rankings/${encodeURIComponent(type)}`
+        );
 
         if (!response.ok) {
             throw new Error('ランキング取得サーバーエラー');
@@ -1152,39 +1180,74 @@ async function fetchAndDisplayRanking(type) {
 
         const rankings = await response.json();
 
+        if (!Array.isArray(rankings)) {
+            throw new Error('ランキングデータの形式が不正です');
+        }
+
         let title = '総合';
 
-        if (type === 'country') title = '国名';
-        if (type === 'capital') title = '首都名';
-        if (type === 'pokemon') title = 'ポケモン';
+        if (type === 'country') {
+            title = '国名';
+        } else if (type === 'capital') {
+            title = '首都名';
+        } else if (type === 'pokemon') {
+            title = 'ポケモン';
+        }
 
-        let html = `<h3>${title}ランキング</h3>`;
-        html += `<table class="ranking-table"><tr><th>順位</th><th>ニックネーム</th><th>クリア数</th></tr>`;
+        let html = `<h3>${escapeHtml(title)}ランキング</h3>`;
+
+        html += `
+            <table class="ranking-table">
+                <thead>
+                    <tr>
+                        <th>順位</th>
+                        <th>ニックネーム</th>
+                        <th>クリア数</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
 
         rankings.forEach(item => {
-            const isCurrentPlayer = item.nickname === currentPlayerNickname;
+            const nickname = String(item.nickname || '名前なし');
+            const safeNickname = escapeHtml(nickname);
+
+            const safeRank = Number.isFinite(Number(item.rank))
+                ? Number(item.rank)
+                : 0;
+
+            const safeScore = Number.isFinite(Number(item.score))
+                ? Number(item.score)
+                : 0;
+
+            const isCurrentPlayer =
+                nickname === String(currentPlayerNickname || '');
 
             html += `
-                <tr style="${isCurrentPlayer ? 'background-color: #554400; font-weight: bold; color:#FFD700;' : ''}">
-                    <td>${item.rank}</td>
-                    <td>${item.nickname}</td>
-                    <td>${item.score}</td>
+                <tr class="${isCurrentPlayer ? 'current-player-row' : ''}">
+                    <td>${safeRank}</td>
+                    <td>${safeNickname}</td>
+                    <td>${safeScore}</td>
                 </tr>
             `;
         });
 
-        html += '</table>';
+        html += `
+                </tbody>
+            </table>
+        `;
 
         container.innerHTML = html;
-
     } catch (error) {
-        console.error('ランキング取得に失敗しました。', error);
+        console.error('ランキング取得に失敗しました。', {
+            name: error.name
+        });
 
-        container.innerHTML =
-            `<p style="color:red;">ランキング取得エラー: サーバーが起動しているか、ネットワーク接続を確認してください。</p>`;
+        container.classList.add('ranking-error');
+        container.textContent =
+            'ランキング取得エラー: サーバーが起動しているか、ネットワーク接続を確認してください。';
     }
 }
-
 // ----------------------------------------------------
 // 5.5. ワードリスト表示
 // ----------------------------------------------------
