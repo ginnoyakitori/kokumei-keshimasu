@@ -5,6 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const { rateLimit } = require('express-rate-limit');
+const fs = require('fs');
 const path = require('path');
 
 const db = require('./db');
@@ -107,8 +108,6 @@ const POKEMON_WORDS = require('./data/pokemon_words.json');
 // ------------------------------
 // ミドルウェア
 // ------------------------------
-app.set('trust proxy', 1);
-
 const allowedOrigins = new Set([
     'http://localhost:3000',
     'https://kokumei-keshimasu.onrender.com'
@@ -140,7 +139,19 @@ app.use(express.urlencoded({
 
 app.use(cookieParser());
 
-app.use(express.static(path.join(__dirname, 'public')));
+// ゲーム画面（index.html / script.js / style.css）は public/ から配信する。
+// public/ に置いたファイルはすべて公開されるため、
+// .env・data/・server.js などは絶対に入れないこと。
+const PUBLIC_DIR = path.join(__dirname, 'public');
+
+if (!fs.existsSync(path.join(PUBLIC_DIR, 'index.html'))) {
+    console.warn(
+        '⚠️ public/index.html が見つかりません。' +
+        ' index.html・script.js・style.css を public/ に置いてください。'
+    );
+}
+
+app.use(express.static(PUBLIC_DIR));
 
 // 必要なら静的ファイル配信
 
@@ -579,51 +590,25 @@ async function requireAuth(req, res, next) {
 }
 
 // ------------------------------
-// トップページ
+// APIの案内（ゲーム画面は public/index.html が / で配信される）
 // ------------------------------
-app.get('/', (req, res) => {
-    res.send(`
-        <!DOCTYPE html>
-        <html lang="ja">
-        <head>
-            <meta charset="UTF-8">
-            <title>ケシマス API</title>
-            <style>
-                body {
-                    font-family: Arial, sans-serif;
-                    background: #1c1c1c;
-                    color: #f0f0f0;
-                    padding: 30px;
-                    line-height: 1.7;
-                }
-                h1 {
-                    color: #FFD700;
-                }
-                a {
-                    color: #FFD700;
-                }
-                code {
-                    background: #333;
-                    padding: 2px 6px;
-                    border-radius: 4px;
-                }
-            </style>
-        </head>
-        <body>
-            <h1>ケシマス API は起動中です</h1>
-            <p>APIサーバーは正常に動作しています。</p>
-            <ul>
-                <li><a href="/api/health">/api/health</a></li>
-                <li><a href="/api/puzzles/country">/api/puzzles/country</a></li>
-                <li><a href="/api/puzzles/capital">/api/puzzles/capital</a></li>
-                <li><a href="/api/puzzles/pokemon">/api/puzzles/pokemon</a></li>
-                <li><a href="/api/words/country">/api/words/country</a></li>
-                <li><a href="/api/words/capital">/api/words/capital</a></li>
-                <li><a href="/api/words/pokemon">/api/words/pokemon</a></li>
-            </ul>
-        </body>
-        </html>
-    `);
+app.get('/api', (req, res) => {
+    res.json({
+        status: 'ok',
+        message: 'Keshimasu API',
+        endpoints: [
+            'GET /api/health',
+            'GET /api/puzzles/:mode',
+            'GET /api/words/:mode',
+            'GET /api/rankings/:type',
+            'POST /api/player/register',
+            'POST /api/player/login',
+            'POST /api/player/logout',
+            'GET /api/player/me',
+            'POST /api/puzzles',
+            'POST /api/score/update'
+        ]
+    });
 });
 
 // ------------------------------

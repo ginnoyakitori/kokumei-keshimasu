@@ -21,14 +21,40 @@ try {
     );
 }
 
+// SSL設定
+// 通常は証明書を検証する（Neonは一般的な認証局の証明書を使うため、そのまま検証できる）
+//
+//   DATABASE_SSL=disable          … SSLを使わない（ローカルのDB用）
+//   DATABASE_SSL_INSECURE=true    … 証明書を検証しない（緊急時のみ。本番では使わないこと）
+//
+// localhost / 127.0.0.1 へ接続するときは、自動的にSSLなしで接続する。
+// ※接続文字列に sslmode が含まれる場合は、pg の仕様上そちらが優先される。
+function buildSslConfig(url) {
+    const localHosts = ['localhost', '127.0.0.1', '[::1]'];
+
+    if (
+        process.env.DATABASE_SSL === 'disable' ||
+        localHosts.includes(url.hostname)
+    ) {
+        return false;
+    }
+
+    if (process.env.DATABASE_SSL_INSECURE === 'true') {
+        console.warn(
+            '⚠️ DATABASE_SSL_INSECURE=true のため、DB接続の証明書を検証していません。'
+        );
+
+        return { rejectUnauthorized: false };
+    }
+
+    return { rejectUnauthorized: true };
+}
+
 // PostgreSQL接続プール
 const pool = new Pool({
     connectionString,
 
-    // NeonはSSL接続を使用する
-    ssl: {
-        rejectUnauthorized: false
-    },
+    ssl: buildSslConfig(new URL(connectionString)),
 
     max: 10,
     idleTimeoutMillis: 30000,
