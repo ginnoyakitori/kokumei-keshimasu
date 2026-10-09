@@ -2,7 +2,7 @@
 // 国名ケシマス----// 国名ケシマス + 首都名ケシマス + ポケモンケシマス 統合版
 // API URL
 // ----------------------------------------------------
-const API_BASE_URL = 'https://kokumei-keshimasu.onrender.com/api';
+const API_BASE_URL = '/api';
 
 // ----------------------------------------------------
 // 1. 定数と初期データ
@@ -17,6 +17,13 @@ let COUNTRY_DICT = [];
 let CAPITAL_DICT = [];
 let POKEMON_DICT = [];
 
+// ワード判定を高速にするための Set（配列と同じ内容）
+const DICT_SETS = {
+    country: new Set(),
+    capital: new Set(),
+    pokemon: new Set()
+};
+
 let boardData = [];
 let initialPlayData = [];
 let selectedCells = [];
@@ -26,14 +33,16 @@ let isCountryMode = true; // 既存互換用
 let currentMode = 'country';
 
 let isCreationPlay = false;
-let currentDictionary = [];
+let currentDictionary = new Set(); // 判定用（Set）。一覧表示には COUNTRY_DICT などの配列を使う
 let currentPuzzleIndex = -1;
+let currentPuzzleId = null; // 現在プレイ中の問題ID（作問モードではnull）
 let currentListMode = 'country';
 
 // IME入力中かどうかを判定するフラグ（作問モード用）
 let isComposing = false;
 
 let currentPlayerNickname = null;
+let isGuestPlayer = false; // ゲストとしてプレイ中か（ニックネームの文字列では判定しない）
 let currentPlayerId = null;
 
 let playerStats = {
@@ -97,14 +106,18 @@ function toKatakana(str) {
     });
 }
 
-function isValidGameChar(char) {
+// ポケモンモードのみで使える文字
+// ニドラン♂、ニドラン♀、ポリゴンZ、ポリゴン2、「・」を含む名前等に対応
+const POKEMON_ONLY_CHARS = ['♂', '♀', 'Z', '2', '・'];
+
+// mode: 'country' | 'capital' | 'pokemon'
+// ※サーバー(server.js)の isValidBoardCharacter と同じ条件にしておくこと
+function isValidGameChar(char, mode) {
     if (char === 'F') return true;
 
-    // ポケモンケシマス用の特殊文字
-    // ニドラン♂、ニドラン♀、ポリゴンZ、ミュウツー等に対応
-    const pokemonSpecialChars = ['♂', '♀', 'Z', '2'];
-
-    if (pokemonSpecialChars.includes(char)) return true;
+    if (POKEMON_ONLY_CHARS.includes(char)) {
+        return mode === 'pokemon';
+    }
 
     // カタカナ1文字
     return /^[\u30a0-\u30ff]$/.test(char);
@@ -123,6 +136,10 @@ function getShortModeName(mode) {
     if (mode === 'capital') return '首都名';
     if (mode === 'pokemon') return 'ポケモン';
     return '問題';
+}
+
+function getDictionarySetByMode(mode) {
+    return DICT_SETS[mode] || new Set();
 }
 
 function getDictionaryByMode(mode) {
@@ -166,228 +183,425 @@ function markPuzzleAsCleared(mode, puzzleId) {
 // ----------------------------------------------------
 // サーバー連携・プレイヤー認証
 // ----------------------------------------------------
-async function loadPuzzlesAndWords() {
-    const modeList = ['country', 'capital', 'pokemon'];
-    const playerId = currentPlayerId;
+// 辞書は内容が変わらないので、一度取得したら再取得しない
+async function loadDictionariesOnce() {
+    const alreadyLoaded =
+        COUNTRY_DICT.length > 0 &&
+        CAPITAL_DICT.length > 0 &&
+        POKEMON_DICT.length > 0;
 
-    try {
-        // 1. 問題リストとクリア済みIDの取得
-        for (const mode of modeList) {
-            const url = `${API_BASE_URL}/puzzles/${mode}` + (playerId ? `?playerId=${playerId}` : '');
-            const res = await fetch(url);
-
-            if (!res.ok) {
-                throw new Error(`${mode}問題リストの取得に失敗`);
-            }
-
-            const data = await res.json();
-            allPuzzles[mode] = data;
-
-            if (data.player_identified) {
-                const key = `cleared_puzzles_${mode}_id_${currentPlayerId}`;
-                localStorage.setItem(key, JSON.stringify(data.cleared_ids || []));
-            }
-        }
-
-        // 2. 辞書データの取得
-        const countryWordsRes = await fetch(`${API_BASE_URL}/words/country`);
-        const capitalWordsRes = await fetch(`${API_BASE_URL}/words/capital`);
-        const pokemonWordsRes = await fetch(`${API_BASE_URL}/words/pokemon`);
-
-        if (!countryWordsRes.ok || !capitalWordsRes.ok || !pokemonWordsRes.ok) {
-            throw new Error('辞書リストの取得に失敗');
-        }
-
-        COUNTRY_DICT = await countryWordsRes.json();
-        CAPITAL_DICT = await capitalWordsRes.json();
-        POKEMON_DICT = await pokemonWordsRes.json();
-
-        updateHomeProblemCount();
-
-    } catch (error) {
-        console.error('問題または辞書のロードに失敗しました。', error);
-
-        if (currentPlayerNickname === 'ゲスト' || !currentPlayerNickname) {
-            alert('サーバーから問題データをロードできませんでした。API_BASE_URLやサーバー設定を確認してください。');
-        }
+    if (alreadyLoaded) {
+        return;
     }
+
+    const responses = await Promise.all(
+        ['country', 'capital', 'pokemon'].map(mode =>
+            fetch(
+                `${API_BASE_URL}/words/${mode}`,
+                {
+                    credentials: 'same-origin'
+                }
+            )
+        )
+    );
+
+    if (responses.some(response => !response.ok)) {
+        throw new Error('辞書リストの取得に失敗しました。');
+    }
+
+    const [country, capital, pokemon] = await Promise.all(
+        responses.map(response => response.json())
+    );
+
+    COUNTRY_DICT = country;
+    CAPITAL_DICT = capital;
+    POKEMON_DICT = pokemon;
+
+    // 判定用のSetを作る（includes の線形探索をやめる）
+    DICT_SETS.country = new Set(country);
+    DICT_SETS.capital = new Set(capital);
+    DICT_SETS.pokemon = new Set(pokemon);
 }
 
-async function getPlayerStatus(id) {
-    if (!id) return false;
+async function loadPuzzlesAndWords() {
+    const modeList = [
+        'country',
+        'capital',
+        'pokemon'
+    ];
 
     try {
-        const response = await fetch(`${API_BASE_URL}/player/${id}`);
+        const puzzleResults = await Promise.all(
+            modeList.map(async mode => {
+                const response = await fetch(
+                    `${API_BASE_URL}/puzzles/${mode}`,
+                    {
+                        credentials: 'same-origin',
+                        headers: {
+                            Accept: 'application/json'
+                        }
+                    }
+                );
 
-        if (response.status === 404) {
-            console.warn('サーバー応答: プレイヤー情報が見つかりません (404)。');
-            return false;
+                if (!response.ok) {
+                    throw new Error(
+                        `${mode}問題リストの取得に失敗しました。`
+                    );
+                }
+
+                return {
+                    mode,
+                    data: await response.json()
+                };
+            })
+        );
+
+        for (const { mode, data } of puzzleResults) {
+            allPuzzles[mode] = data;
+
+            if (
+                data.player_identified &&
+                currentPlayerId
+            ) {
+                localStorage.setItem(
+                    `cleared_puzzles_${mode}_id_${currentPlayerId}`,
+                    JSON.stringify(
+                        data.cleared_ids || []
+                    )
+                );
+            }
         }
+
+        await loadDictionariesOnce();
+
+        updateHomeProblemCount();
+    } catch (error) {
+        console.error(
+            '問題または辞書の読み込みに失敗しました。',
+            {
+                name: error.name
+            }
+        );
+
+        alert(
+            '問題データを読み込めませんでした。時間を空けて再試行してください。'
+        );
+    }
+}
+async function getCurrentPlayer() {
+    try {
+        const response = await fetch(
+            `${API_BASE_URL}/player/me`,
+            {
+                method: 'GET',
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json'
+                }
+            }
+        );
+
+        if (response.status === 401) {
+            return null;
+        }
+
+        const data = await response.json().catch(() => null);
 
         if (!response.ok) {
-            throw new Error('プレイヤー情報取得サーバーエラー');
+            throw new Error(
+                data?.message ||
+                'プレイヤー情報を取得できませんでした。'
+            );
         }
 
-        const data = await response.json();
+        if (!data?.player) {
+            throw new Error(
+                'プレイヤー情報の形式が正しくありません。'
+            );
+        }
+
+        setPlayerSession(data.player);
+
         const player = data.player;
 
-        playerStats.country_clears = player.country_clears || 0;
-        playerStats.capital_clears = player.capital_clears || 0;
-        playerStats.pokemon_clears = player.pokemon_clears || 0;
-
-        if (player.cleared_country_ids) {
+        if (Array.isArray(player.cleared_country_ids)) {
             localStorage.setItem(
-                `cleared_puzzles_country_id_${id}`,
+                `cleared_puzzles_country_id_${currentPlayerId}`,
                 JSON.stringify(player.cleared_country_ids)
             );
         }
 
-        if (player.cleared_capital_ids) {
+        if (Array.isArray(player.cleared_capital_ids)) {
             localStorage.setItem(
-                `cleared_puzzles_capital_id_${id}`,
+                `cleared_puzzles_capital_id_${currentPlayerId}`,
                 JSON.stringify(player.cleared_capital_ids)
             );
         }
 
-        if (player.cleared_pokemon_ids) {
+        if (Array.isArray(player.cleared_pokemon_ids)) {
             localStorage.setItem(
-                `cleared_puzzles_pokemon_id_${id}`,
+                `cleared_puzzles_pokemon_id_${currentPlayerId}`,
                 JSON.stringify(player.cleared_pokemon_ids)
             );
         }
 
-        return true;
-
+        return player;
     } catch (error) {
-        console.error('プレイヤー情報の取得に失敗。', error);
-        return false;
+        console.error(
+            'プレイヤー情報の取得に失敗しました。',
+            {
+                name: error.name
+            }
+        );
+
+        return null;
     }
 }
 
 function setPlayerSession(playerData) {
-    currentPlayerNickname = playerData.nickname;
-    currentPlayerId = playerData.id;
+    if (!playerData || !playerData.id || !playerData.nickname) {
+        throw new Error('プレイヤー情報の形式が正しくありません。');
+    }
 
-    playerStats.country_clears = playerData.country_clears || 0;
-    playerStats.capital_clears = playerData.capital_clears || 0;
-    playerStats.pokemon_clears = playerData.pokemon_clears || 0;
+    currentPlayerNickname = String(playerData.nickname);
+    isGuestPlayer = false;
+    currentPlayerId = Number(playerData.id);
 
-    localStorage.setItem('keshimasu_nickname', currentPlayerNickname);
-    localStorage.setItem('player_id', currentPlayerId);
+    playerStats.country_clears =
+        Number(playerData.country_clears) || 0;
+
+    playerStats.capital_clears =
+        Number(playerData.capital_clears) || 0;
+
+    playerStats.pokemon_clears =
+        Number(playerData.pokemon_clears) || 0;
+}
+
+// ログイン済みかどうか（サーバーのセッションに対応したプレイヤーIDがあるか）
+function isLoggedIn() {
+    return currentPlayerId !== null && !isGuestPlayer;
+}
+
+function clearLocalPlayerState() {
+    currentPlayerId = null;
+    currentPlayerNickname = null;
+    isGuestPlayer = false;
+
+    playerStats = {
+        country_clears: 0,
+        capital_clears: 0,
+        pokemon_clears: 0
+    };
+
+    // 旧バージョンで保存された認証関連データも削除
+    localStorage.removeItem('player_id');
+    localStorage.removeItem('keshimasu_nickname');
+
+    if (inputNickname) {
+        inputNickname.value = '';
+    }
+
+    if (inputPasscode) {
+        inputPasscode.value = '';
+    }
+
+    if (welcomeMessage) {
+        welcomeMessage.textContent = '';
+    }
 }
 
 async function attemptLogin(nickname, passcode) {
-    if (!nickname || nickname.trim() === '' || !passcode || passcode.trim() === '') {
-        alert('ニックネームとパスコードの両方を入力してください。');
+    const finalName =
+        typeof nickname === 'string'
+            ? nickname.trim()
+            : '';
+
+    if (!finalName || typeof passcode !== 'string' || !passcode) {
+        alert(
+            'ニックネームとパスコードの両方を入力してください。'
+        );
+
         return false;
     }
 
-    const finalName = nickname.trim().slice(0, 20);
+    if ([...finalName].length > 20) {
+        alert('ニックネームは20文字以内で入力してください。');
+        return false;
+    }
 
     try {
-        const response = await fetch(`${API_BASE_URL}/player/register`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ nickname: finalName, passcode })
-        });
+        const response = await fetch(
+            `${API_BASE_URL}/player/login`,
+            {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json'
+                },
+                body: JSON.stringify({
+                    nickname: finalName,
+                    passcode
+                })
+            }
+        );
 
-        const data = await response.json();
+        const data = await response.json().catch(() => null);
 
         if (!response.ok) {
-            alert(`ログイン失敗: ${data.message || 'サーバーエラー'}`);
+            alert(
+                data?.message ||
+                'ログインに失敗しました。'
+            );
+
+            inputPasscode.value = '';
             return false;
         }
 
-        if (data.isNewUser) {
-            alert('ログイン失敗: そのニックネームは登録されていません。新規登録ボタンをご利用ください。');
+        if (!data?.player) {
+            alert('プレイヤー情報を取得できませんでした。');
             return false;
         }
 
         setPlayerSession(data.player);
-        await getPlayerStatus(currentPlayerId);
-
-        alert(`${finalName}さん、ログイン成功です！`);
+        inputPasscode.value = '';
 
         await loadPuzzlesAndWords();
+
+        alert(
+            `${currentPlayerNickname}さん、ログインしました。`
+        );
+
         showScreen('home');
-
         return true;
-
     } catch (error) {
-        console.error('プレイヤー認証に失敗しました。', error);
-        alert('ネットワークエラーによりログインに失敗しました。');
+        console.error(
+            'ログイン処理に失敗しました。',
+            {
+                name: error.name
+            }
+        );
+
+        alert(
+            'ネットワークエラーによりログインできませんでした。'
+        );
+
         return false;
     }
 }
-
 async function attemptRegister(nickname, passcode) {
-    if (!nickname || nickname.trim() === '' || !passcode || passcode.trim() === '') {
-        alert('ニックネームとパスコードの両方を入力してください。');
+    const finalName =
+        typeof nickname === 'string'
+            ? nickname.trim()
+            : '';
+
+    if (!finalName || typeof passcode !== 'string' || !passcode) {
+        alert(
+            'ニックネームとパスコードの両方を入力してください。'
+        );
+
         return false;
     }
 
-    const finalName = nickname.trim().slice(0, 20);
+    if ([...finalName].length > 20) {
+        alert('ニックネームは20文字以内で入力してください。');
+        return false;
+    }
+
+    if (passcode.length < 8 || passcode.length > 72) {
+        alert(
+            'パスコードは8文字以上72文字以内で入力してください。'
+        );
+
+        return false;
+    }
 
     try {
-        const response = await fetch(`${API_BASE_URL}/player/register`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ nickname: finalName, passcode })
-        });
+        const response = await fetch(
+            `${API_BASE_URL}/player/register`,
+            {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json'
+                },
+                body: JSON.stringify({
+                    nickname: finalName,
+                    passcode
+                })
+            }
+        );
 
-        const data = await response.json();
+        const data = await response.json().catch(() => null);
 
         if (!response.ok) {
-            alert(`新規登録失敗: ${data.message || 'サーバーエラー'}`);
+            alert(
+                data?.message ||
+                '新規登録に失敗しました。'
+            );
+
+            inputPasscode.value = '';
             return false;
         }
 
-        if (!data.isNewUser) {
-            alert('新規登録失敗: そのニックネームは既に登録されています。ログインボタンをご利用ください。');
+        if (!data?.player) {
+            alert('プレイヤー情報を取得できませんでした。');
             return false;
         }
 
         setPlayerSession(data.player);
-        await getPlayerStatus(currentPlayerId);
-
-        alert(`${finalName}さん、新規登録成功です！`);
+        inputPasscode.value = '';
 
         await loadPuzzlesAndWords();
+
+        alert(
+            `${currentPlayerNickname}さん、新規登録しました。`
+        );
+
         showScreen('home');
-
         return true;
-
     } catch (error) {
-        console.error('プレイヤー新規登録に失敗しました。', error);
-        alert('ネットワークエラーにより登録に失敗しました。');
+        console.error(
+            '新規登録処理に失敗しました。',
+            {
+                name: error.name
+            }
+        );
+
+        alert(
+            'ネットワークエラーにより新規登録できませんでした。'
+        );
+
         return false;
     }
 }
 
 async function setupPlayer() {
-    currentPlayerId = localStorage.getItem('player_id');
-    currentPlayerNickname = localStorage.getItem('keshimasu_nickname');
+    currentPlayerId = null;
+    currentPlayerNickname = null;
 
-    if (currentPlayerNickname === 'ゲスト' || !currentPlayerNickname) {
-        playerStats.country_clears = getClearedPuzzles('country').length;
-        playerStats.capital_clears = getClearedPuzzles('capital').length;
-        playerStats.pokemon_clears = getClearedPuzzles('pokemon').length;
-    }
+    playerStats = {
+        country_clears: 0,
+        capital_clears: 0,
+        pokemon_clears: 0
+    };
 
-    if (currentPlayerId && currentPlayerNickname && currentPlayerNickname !== 'ゲスト') {
-        const success = await getPlayerStatus(currentPlayerId);
+    try {
+        const player = await getCurrentPlayer();
 
-        if (success) {
+        if (player) {
             await loadPuzzlesAndWords();
             showScreen('home');
             return;
         }
-
-        currentPlayerId = null;
-        currentPlayerNickname = null;
-
-        localStorage.removeItem('player_id');
-        localStorage.removeItem('keshimasu_nickname');
+    } catch (error) {
+        console.error(
+            'ログイン状態の確認に失敗しました。',
+            {
+                name: error.name
+            }
+        );
     }
 
     await loadPuzzlesAndWords();
@@ -408,8 +622,10 @@ function showScreen(screenName) {
         appTitleElement.style.display = 'block';
         updateHomeProblemCount();
 
-        if (currentPlayerNickname) {
+        if (isLoggedIn() && currentPlayerNickname) {
             welcomeMessage.textContent = `${currentPlayerNickname}さん、ようこそ！`;
+        } else if (isGuestPlayer) {
+            welcomeMessage.textContent = 'ゲストとしてプレイ中です（スコアは保存されません）';
         } else {
             welcomeMessage.textContent = '';
         }
@@ -487,18 +703,21 @@ function showPuzzleListByMode(mode) {
     let html = '';
 
     sortedPuzzles.forEach((puzzle, index) => {
-        const puzzleId = Number(puzzle.id);
-        const isCleared = clearedIds.has(puzzleId);
+    const puzzleId = Number(puzzle.id);
+    const isCleared = clearedIds.has(puzzleId);
 
-        const clearCount =
-            puzzle.clear_count ??
-            puzzle.clearCount ??
-            puzzle.cleared_count ??
-            0;
+    const creator = escapeHtml(
+        puzzle.creator || '不明'
+    );
 
-        const creator = escapeHtml(puzzle.creator || '不明');
+    const clearCount = Number(
+        puzzle.clear_count ??
+        puzzle.clearCount ??
+        puzzle.cleared_count ??
+        0
+    ) || 0;
 
-        html += `
+    html += `
             <div class="puzzle-card ${isCleared ? 'cleared' : 'uncleared'}">
                 <div class="puzzle-card-header">
                     <div class="puzzle-number">第 ${index + 1} 問</div>
@@ -538,10 +757,11 @@ function startPuzzleById(mode, puzzleId) {
         return;
     }
 
-    const allProblemData = allPuzzles[mode].puzzles || [];
-
-    allProblemData.sort((a, b) => Number(a.id) - Number(b.id));
-
+    const allProblemData = [
+    ...(allPuzzles[mode].puzzles || [])
+].sort(
+    (a, b) => Number(a.id) - Number(b.id)
+);
     const selectedPuzzle = allProblemData.find(
         puzzle => Number(puzzle.id) === Number(puzzleId)
     );
@@ -555,14 +775,17 @@ function startPuzzleById(mode, puzzleId) {
     currentMode = mode;
     isCountryMode = mode === 'country';
     isCreationPlay = false;
-    currentDictionary = getDictionaryByMode(mode);
+    currentDictionary = getDictionarySetByMode(mode);
 
     currentPuzzleIndex = allProblemData.findIndex(
         p => Number(p.id) === Number(selectedPuzzle.id)
     );
 
-    initialPlayData = JSON.parse(JSON.stringify(selectedPuzzle.data));
-    boardData = JSON.parse(JSON.stringify(selectedPuzzle.data));
+    currentPuzzleId = Number(selectedPuzzle.id);
+
+    // 浮いている文字がある盤面は、開始時に下へ落とす
+    initialPlayData = dropBoardLetters(selectedPuzzle.data);
+    boardData = JSON.parse(JSON.stringify(initialPlayData));
 
     selectedCells = [];
     usedWords = [];
@@ -588,13 +811,15 @@ function startGameByMode(mode, isCreation) {
         return;
     }
 
-    const allProblemData = allPuzzles[mode].puzzles || [];
-    allProblemData.sort((a, b) => Number(a.id) - Number(b.id));
-
+    const allProblemData = [
+    ...(allPuzzles[mode].puzzles || [])
+].sort(
+    (a, b) => Number(a.id) - Number(b.id)
+);
     currentMode = mode;
     isCountryMode = mode === 'country';
     isCreationPlay = isCreation;
-    currentDictionary = getDictionaryByMode(mode);
+    currentDictionary = getDictionarySetByMode(mode);
 
     if (!isCreation) {
         const serverClearedIds = allPuzzles[mode].cleared_ids || [];
@@ -619,14 +844,18 @@ function startGameByMode(mode, isCreation) {
             p => Number(p.id) === Number(selectedPuzzle.id)
         );
 
-        initialPlayData = JSON.parse(JSON.stringify(selectedPuzzle.data));
-        boardData = JSON.parse(JSON.stringify(selectedPuzzle.data));
+        currentPuzzleId = Number(selectedPuzzle.id);
+
+        // 浮いている文字がある盤面は、開始時に下へ落とす
+        initialPlayData = dropBoardLetters(selectedPuzzle.data);
+        boardData = JSON.parse(JSON.stringify(initialPlayData));
 
         const nextProblemNumber = (playerStats[`${mode}_clears`] || 0) + 1;
         document.getElementById('problem-number-display').textContent = `第 ${nextProblemNumber} 問`;
 
     } else {
         currentPuzzleIndex = -1;
+        currentPuzzleId = null;
         document.getElementById('problem-number-display').textContent = '問題制作モード';
     }
 
@@ -702,60 +931,172 @@ function updateStatusDisplay() {
 // スコア更新・問題登録・クリア判定
 // ----------------------------------------------------
 async function updatePlayerScore(mode, puzzleId) {
-    if (!currentPlayerId || isCreationPlay) {
-        return;
+    if (
+        !isLoggedIn() ||
+        isCreationPlay
+    ) {
+        return false;
+    }
+
+    if (!isValidMode(mode)) {
+        return false;
+    }
+
+    const numericPuzzleId = Number(puzzleId);
+
+    if (
+        !Number.isSafeInteger(numericPuzzleId) ||
+        numericPuzzleId <= 0
+    ) {
+        return false;
     }
 
     try {
-        const response = await fetch(`${API_BASE_URL}/score/update`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                playerId: currentPlayerId,
-                mode,
-                puzzleId
-            })
-        });
+        const response = await fetch(
+            `${API_BASE_URL}/score/update`,
+            {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json'
+                },
+                body: JSON.stringify({
+                    mode,
+                    puzzleId: numericPuzzleId
+                })
+            }
+        );
 
-        if (!response.ok) {
-            throw new Error('スコア更新サーバーエラー');
+        const data = await response.json().catch(() => null);
+
+        if (response.status === 401) {
+             clearLocalPlayerState();
+
+            alert(
+                'ログインの有効期限が切れました。再度ログインしてください。'
+            );
+
+            showScreen('auth');
+            return false;
         }
 
-        const data = await response.json();
-        playerStats[`${mode}_clears`] = data.newScore;
+        if (!response.ok) {
+            throw new Error(
+                data?.message ||
+                'スコアを更新できませんでした。'
+            );
+        }
 
+        playerStats[`${mode}_clears`] =
+            Number(data.newScore) || 0;
+
+        return true;
     } catch (error) {
-        console.error('スコア更新に失敗しました。', error);
+        console.error(
+            'スコア更新に失敗しました。',
+            {
+                name: error.name
+            }
+        );
+
+        return false;
     }
 }
 
-async function submitNewPuzzle(mode, boardData, creator) {
-    try {
-        const response = await fetch(`${API_BASE_URL}/puzzles`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                mode,
-                boardData,
-                creator
-            })
-        });
+async function submitNewPuzzle(mode, newBoardData) {
+    if (
+        !isLoggedIn() ||
+        !currentPlayerNickname
+    ) {
+        alert('問題を登録するにはログインが必要です。');
+        showScreen('auth');
+        return false;
+    }
 
-        if (!response.ok) {
-            throw new Error('問題登録サーバーエラー');
+    if (!isValidMode(mode)) {
+        alert('無効なモードです。');
+        return false;
+    }
+
+    if (
+        !Array.isArray(newBoardData) ||
+        newBoardData.length !== 8 ||
+        !newBoardData.every(
+            row =>
+                Array.isArray(row) &&
+                row.length === 5 &&
+                row.every(
+                    cell =>
+                        typeof cell === 'string' &&
+                        [...cell].length <= 1
+                )
+        )
+    ) {
+        alert('盤面データの形式が正しくありません。');
+        return false;
+    }
+
+    try {
+        const response = await fetch(
+            `${API_BASE_URL}/puzzles`,
+            {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json'
+                },
+                body: JSON.stringify({
+                    mode,
+                    boardData: newBoardData
+                })
+            }
+        );
+
+        const data = await response.json().catch(() => null);
+
+        if (response.status === 401) {
+            clearLocalPlayerState();
+
+            alert(
+                'ログインの有効期限が切れました。再度ログインしてください。'
+            );
+
+            showScreen('auth');
+            return false;
         }
 
-        const data = await response.json();
+        if (!response.ok) {
+            alert(
+                data?.message ||
+                '問題を登録できませんでした。'
+            );
+
+            return false;
+        }
+
+        const creatorName =
+            data?.puzzle?.creator || currentPlayerNickname;
 
         alert(
-            `🎉 問題の登録に成功しました！\n制作者：${data.puzzle.creator}\nこの問題は今後、標準問題として出題されます。`
+            `問題を登録しました。\n` +
+            `制作者: ${creatorName}\n` +
+            'この問題は今後、標準問題として出題されます。'
         );
 
         await loadPuzzlesAndWords();
-
+        return true;
     } catch (error) {
-        console.error('問題登録に失敗しました。', error);
-        alert('問題の登録に失敗しました。サーバーが起動しているか、API_BASE_URLが正しいか確認してください。');
+        console.error('問題登録に失敗しました。', {
+            name: error.name
+        });
+
+        alert(
+            'ネットワークエラーにより問題を登録できませんでした。'
+        );
+
+        return false;
     }
 }
 
@@ -770,17 +1111,12 @@ async function checkGameStatus() {
     const modeName = getShortModeName(mode);
 
     if (!isCreationPlay) {
-        const problemDataList = allPuzzles[mode].puzzles || [];
-
-        const currentPuzzle = problemDataList.find(
-            p => JSON.stringify(p.data) === JSON.stringify(initialPlayData)
-        );
-
-        if (currentPuzzle && currentPuzzle.id) {
-            markPuzzleAsCleared(mode, currentPuzzle.id);
+        // 盤面の内容ではなく、プレイ開始時に保持した問題IDでクリアを記録する
+        if (currentPuzzleId) {
+            markPuzzleAsCleared(mode, currentPuzzleId);
 
             if (currentPlayerId) {
-                await updatePlayerScore(mode, currentPuzzle.id);
+                await updatePlayerScore(mode, currentPuzzleId);
             } else {
                 playerStats[`${mode}_clears`] = (playerStats[`${mode}_clears`] || 0) + 1;
             }
@@ -802,22 +1138,28 @@ async function checkGameStatus() {
 
         if (registrationConfirmed) {
             const finalBoard = JSON.parse(JSON.stringify(initialPlayData));
-            await submitNewPuzzle(mode, finalBoard, currentPlayerNickname);
-            showScreen('home');
+            const registered = await submitNewPuzzle(
+    mode,
+    finalBoard
+);
+
+if (registered) {
+    showScreen('home');
+}
         } else {
             alert('問題の登録をスキップしました。作成画面に戻ります。');
 
             showScreen('create');
             renderCreateBoard();
-            fillCreateBoard(initialPlayData);
 
-            btnInputComplete.disabled = false;
-            document.getElementById('create-status').textContent = '入力完了！解答を開始できます。';
-
+            // 判定モードを先に戻してから盤面を復元する
+            // （順序が逆だと、ポケモン専用文字が「使えない文字」として消えてしまう）
             const creationModeSelect = document.getElementById('creation-mode-select');
             if (creationModeSelect) {
                 creationModeSelect.value = mode;
             }
+
+            fillCreateBoard(initialPlayData);
         }
     }
 }
@@ -825,23 +1167,32 @@ async function checkGameStatus() {
 // ----------------------------------------------------
 // 3. ゲームロジックの中核
 // ----------------------------------------------------
-function applyGravity() {
-    for (let c = 0; c < 5; c++) {
-        let columnChars = [];
+// 空マスの上に浮いた文字を下へ落とした新しい盤面を返す（元の盤面は変更しない）
+// ※サーバー(server.js)の dropBoardLetters と同じ処理にしておくこと
+function dropBoardLetters(board) {
+    const rowCount = board.length;
+    const result = board.map(row => [...row]);
+    const columnCount = rowCount > 0 ? board[0].length : 0;
 
-        for (let r = boardData.length - 1; r >= 0; r--) {
-            if (boardData[r][c] !== '') {
-                columnChars.unshift(boardData[r][c]);
+    for (let c = 0; c < columnCount; c++) {
+        const letters = [];
+
+        for (let r = rowCount - 1; r >= 0; r--) {
+            if (board[r][c] !== '') {
+                letters.push(board[r][c]);
             }
         }
 
-        let newColumn = Array(8 - columnChars.length).fill('');
-        newColumn = newColumn.concat(columnChars);
-
-        for (let r = 0; r < 8; r++) {
-            boardData[r][c] = newColumn[r];
+        for (let r = rowCount - 1; r >= 0; r--) {
+            result[r][c] = letters[rowCount - 1 - r] ?? '';
         }
     }
+
+    return result;
+}
+
+function applyGravity() {
+    boardData = dropBoardLetters(boardData);
 }
 
 function handleCellClick(event) {
@@ -942,7 +1293,7 @@ eraseButton.addEventListener('click', async () => {
             if (input && input.trim() !== '') {
                 const inputChar = toKatakana(input).toUpperCase().slice(0, 1);
 
-                if (!isValidGameChar(inputChar) && inputChar !== 'F') {
+                if (!isValidGameChar(inputChar, currentMode)) {
                     alert('入力された文字は有効ではありません。');
                     return;
                 }
@@ -959,7 +1310,7 @@ eraseButton.addEventListener('click', async () => {
         finalWord = selectedWord;
     }
 
-    if (!currentDictionary.includes(finalWord)) {
+    if (!currentDictionary.has(finalWord)) {
         alert(`「${finalWord}」は有効な${modeLabel}ではありません。`);
         return;
     }
@@ -990,19 +1341,18 @@ resetBtn.addEventListener('click', () => {
     if (isCreationPlay) {
         showScreen('create');
         renderCreateBoard();
+
+        // 作問時の判定モードに合わせてから盤面を復元する
+        const creationModeSelectOnReset = document.getElementById('creation-mode-select');
+        if (creationModeSelectOnReset) {
+            creationModeSelectOnReset.value = currentMode;
+        }
+
         fillCreateBoard(initialPlayData);
 
-        btnInputComplete.disabled = false;
-        document.getElementById('create-status').textContent = '入力完了！解答を開始できます。';
-
-    } else if (currentPuzzleIndex !== -1) {
-        const problemDataList = allPuzzles[currentMode].puzzles || [];
-        const selectedPuzzle = problemDataList[currentPuzzleIndex];
-
-        if (!selectedPuzzle) return;
-
-        initialPlayData = JSON.parse(JSON.stringify(selectedPuzzle.data));
-        boardData = JSON.parse(JSON.stringify(selectedPuzzle.data));
+    } else if (initialPlayData.length > 0) {
+        // プレイ開始時に保存した初期盤面へ戻す（問題リストを再検索しない）
+        boardData = JSON.parse(JSON.stringify(initialPlayData));
 
         selectedCells = [];
         usedWords = [];
@@ -1079,7 +1429,16 @@ function fillCreateBoard(data) {
     checkCreationInput();
 }
 
+function getCreationMode() {
+    const modeSelect = document.getElementById('creation-mode-select');
+    return modeSelect && isValidMode(modeSelect.value)
+        ? modeSelect.value
+        : 'country';
+}
+
 function checkCreationInput(event) {
+    const mode = getCreationMode();
+
     if (event && event.target) {
         const input = event.target;
         let value = input.value;
@@ -1088,7 +1447,7 @@ function checkCreationInput(event) {
             value = value.toUpperCase();
             value = toKatakana(value);
 
-            if (value.length > 0 && !isValidGameChar(value) && value !== 'F') {
+            if (value.length > 0 && !isValidGameChar(value, mode)) {
                 value = '';
             }
 
@@ -1100,19 +1459,36 @@ function checkCreationInput(event) {
     let filledCount = 0;
 
     inputs.forEach(input => {
-        if (input.value.length === 1 && (isValidGameChar(input.value) || input.value === 'F')) {
+        if (input.value.length === 0) {
+            return;
+        }
+
+        // 判定モードを切り替えたとき、そのモードで使えない文字は消す
+        if (input.value.length === 1 && isValidGameChar(input.value, mode)) {
             filledCount++;
+        } else {
+            input.value = '';
         }
     });
 
-    if (filledCount === 40) {
+    if (filledCount >= 1) {
         btnInputComplete.disabled = false;
-        document.getElementById('create-status').textContent = '入力完了！解答を開始できます。';
+        document.getElementById('create-status').textContent =
+            `入力済み: ${filledCount}マス。解答を開始できます。`;
     } else {
         btnInputComplete.disabled = true;
         document.getElementById('create-status').textContent =
-            `残り${40 - filledCount}マスに入力が必要です。`;
+            '1マス以上に入力してください。';
     }
+}
+
+// 判定モードを切り替えたら、入力済みの文字を再チェックする
+const creationModeSelectElement = document.getElementById('creation-mode-select');
+
+if (creationModeSelectElement) {
+    creationModeSelectElement.addEventListener('change', () => {
+        checkCreationInput();
+    });
 }
 
 btnInputComplete.addEventListener('click', () => {
@@ -1129,8 +1505,9 @@ btnInputComplete.addEventListener('click', () => {
     const modeSelect = document.getElementById('creation-mode-select');
     const mode = modeSelect ? modeSelect.value : 'country';
 
-    initialPlayData = JSON.parse(JSON.stringify(newBoard));
-    boardData = JSON.parse(JSON.stringify(newBoard));
+    // 空マスの上に浮いた文字は下へ落とした状態で開始する
+    initialPlayData = dropBoardLetters(newBoard);
+    boardData = JSON.parse(JSON.stringify(initialPlayData));
 
     startGameByMode(mode, true);
 });
@@ -1159,7 +1536,7 @@ async function fetchAndDisplayRanking(type) {
         pokemonClears;
 
     const safeCurrentPlayerNickname = escapeHtml(
-        currentPlayerNickname || 'ゲスト'
+        isLoggedIn() ? currentPlayerNickname : 'ゲスト'
     );
 
     nicknameDisplay.innerHTML =
@@ -1220,8 +1597,10 @@ async function fetchAndDisplayRanking(type) {
                 ? Number(item.score)
                 : 0;
 
+            // ゲストはランキングに載らないので、ログイン中のみ自分の行を強調する
             const isCurrentPlayer =
-                nickname === String(currentPlayerNickname || '');
+                isLoggedIn() &&
+                nickname === currentPlayerNickname;
 
             html += `
                 <tr class="${isCurrentPlayer ? 'current-player-row' : ''}">
@@ -1313,44 +1692,113 @@ if (btnRegisterSubmit) {
 }
 
 if (inputPasscode) {
-    inputPasscode.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            attemptLogin(inputNickname.value, inputPasscode.value);
+    inputPasscode.addEventListener(
+        'keydown',
+        event => {
+            if (
+                event.key === 'Enter' &&
+                !event.isComposing
+            ) {
+                event.preventDefault();
+
+                attemptLogin(
+                    inputNickname.value,
+                    inputPasscode.value
+                );
+            }
         }
-    });
+    );
 }
 
 if (btnGuestPlay) {
-    btnGuestPlay.addEventListener('click', async () => {
-        currentPlayerNickname = 'ゲスト';
-        currentPlayerId = null;
+    btnGuestPlay.addEventListener(
+        'click',
+        async () => {
+            btnGuestPlay.disabled = true;
 
-        localStorage.removeItem('player_id');
-        localStorage.removeItem('keshimasu_nickname');
+            try {
+                await fetch(
+                    `${API_BASE_URL}/player/logout`,
+                    {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {
+                            Accept: 'application/json'
+                        }
+                    }
+                );
+            } catch (error) {
+                console.warn(
+                    '既存セッションの終了に失敗しました。',
+                    {
+                        name: error.name
+                    }
+                );
+            } finally {
+                clearLocalPlayerState();
 
-        playerStats.country_clears = getClearedPuzzles('country').length;
-        playerStats.capital_clears = getClearedPuzzles('capital').length;
-        playerStats.pokemon_clears = getClearedPuzzles('pokemon').length;
+                // ニックネームの文字列ではなく、専用フラグでゲストを判定する
+                isGuestPlayer = true;
+                currentPlayerNickname = null;
+                currentPlayerId = null;
 
-        alert('ゲストとしてゲームを開始します。スコアはランキングに保存されません。');
+                playerStats.country_clears =
+                    getClearedPuzzles('country').length;
 
-        await loadPuzzlesAndWords();
-        showScreen('home');
-    });
+                playerStats.capital_clears =
+                    getClearedPuzzles('capital').length;
+
+                playerStats.pokemon_clears =
+                    getClearedPuzzles('pokemon').length;
+
+                btnGuestPlay.disabled = false;
+
+                alert(
+                    'ゲストとしてゲームを開始します。' +
+                    'スコアはランキングに保存されません。'
+                );
+
+                await loadPuzzlesAndWords();
+                showScreen('home');
+            }
+        }
+    );
 }
+const logoutButton =
+    document.getElementById('btn-logout');
 
-document.getElementById('btn-logout').addEventListener('click', () => {
-    currentPlayerNickname = null;
-    currentPlayerId = null;
+if (logoutButton) {
+    logoutButton.addEventListener(
+        'click',
+        async () => {
+            logoutButton.disabled = true;
 
-    localStorage.removeItem('player_id');
-    localStorage.removeItem('keshimasu_nickname');
-
-    inputNickname.value = '';
-    inputPasscode.value = '';
-
-    showScreen('auth');
-});
+            try {
+                await fetch(
+                    `${API_BASE_URL}/player/logout`,
+                    {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {
+                            Accept: 'application/json'
+                        }
+                    }
+                );
+            } catch (error) {
+                console.error(
+                    'ログアウト通信に失敗しました。',
+                    {
+                        name: error.name
+                    }
+                );
+            } finally {
+                clearLocalPlayerState();
+                logoutButton.disabled = false;
+                showScreen('auth');
+            }
+        }
+    );
+}
 
 // ホーム画面
 document.getElementById('btn-country-mode').addEventListener('click', () => {
@@ -1376,7 +1824,7 @@ if (btnPuzzleListBack) {
 }
 
 document.getElementById('btn-create-mode').addEventListener('click', () => {
-    if (!currentPlayerNickname || currentPlayerNickname === 'ゲスト') {
+    if (!isLoggedIn()) {
         alert('問題制作モードを利用するには、ログインしてください。');
         return;
     }
@@ -1438,4 +1886,3 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 setupPlayer();
-

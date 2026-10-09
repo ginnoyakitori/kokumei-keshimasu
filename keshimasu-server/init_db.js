@@ -166,7 +166,11 @@ async function upsertInitialPuzzle(mode, puzzle) {
             SET
                 data = $2::jsonb,
                 creator = $3
-            WHERE id = $1;
+            WHERE id = $1
+              AND (
+                  data IS DISTINCT FROM $2::jsonb
+                  OR creator IS DISTINCT FROM $3
+              );
             `,
             [
                 existingId,
@@ -304,6 +308,31 @@ async function initializeDatabase() {
         `);
 
         console.log('✅ Table "players" columns checked.');
+
+        // ニックネームの大文字小文字を区別しない一意制約
+        // 既存データに重複があるとインデックス作成が失敗するため、先に確認する
+        const duplicateNicknames = await db.query(`
+            SELECT LOWER(nickname) AS lower_nickname, COUNT(*)::integer AS count
+            FROM players
+            GROUP BY LOWER(nickname)
+            HAVING COUNT(*) > 1;
+        `);
+
+        if (duplicateNicknames.rows.length > 0) {
+            console.warn(
+                '⚠️ 大文字小文字を除いて重複するニックネームがあるため、' +
+                'players_nickname_lower_unique の作成をスキップしました。' +
+                ' 重複を解消してから再起動してください。',
+                duplicateNicknames.rows
+            );
+        } else {
+            await db.query(`
+                CREATE UNIQUE INDEX IF NOT EXISTS players_nickname_lower_unique
+                ON players (LOWER(nickname));
+            `);
+
+            console.log('✅ Unique index on LOWER(nickname) checked.');
+        }
 
         // =========================================================
         // puzzles テーブル
@@ -469,9 +498,60 @@ async function initializeDatabase() {
         console.log('✅ Database initialization completed.');
 
     } catch (error) {
-        console.error('❌ Failed to initialize database tables:', error.message);
+        console.error(
+    'データベース初期化に失敗しました。',
+    {
+        name: error.name,
+        code: error.code
+    }
+);
         throw error;
     }
 }
 
-module.exports = initializeDatabase;
+// ------------------------------
+// セッションテーブル
+// ------------------------------
+async function initializeSessionTable() {
+    await db.query(`
+        CREATE TABLE IF NOT EXISTS player_sessions (
+            id BIGSERIAL PRIMARY KEY,
+            player_id BIGINT NOT NULL
+                REFERENCES players(id)
+                ON DELETE CASCADE,
+            token_hash TEXT NOT NULL UNIQUE,
+            expires_at TIMESTAMPTZ NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+    `);
+
+    await db.query(`
+        CREATE INDEX IF NOT EXISTS
+            idx_player_sessions_player_id
+        ON player_sessions(player_id);
+    `);
+
+    await db.query(`
+        CREATE INDEX IF NOT EXISTS
+            idx_player_sessions_expires_at
+        ON player_sessions(expires_at);
+    `);
+
+    console.log('✅ Table "player_sessions" checked.');
+}
+
+// ------------------------------
+// すべてのマイグレーションを順番に実行する
+// migrate.js（デプロイ時）から呼ばれる。
+// RUN_MIGRATIONS_ON_START=true のときはサーバー起動時にも呼ばれる。
+// ------------------------------
+async function runMigrations() {
+    await initializeDatabase();
+    await initializeSessionTable();
+}
+
+module.exports = {
+    initializeDatabase,
+    initializeSessionTable,
+    runMigrations
+};
