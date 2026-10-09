@@ -20,6 +20,7 @@
     --color-border: #555;
     --color-success: #6ddf6d;
     --color-danger: #e30000;
+    color-scheme: dark;
 }
 
 /* ------------------------------ */
@@ -1038,4 +1039,320 @@ button {
 
 .ranking-error {
     color: red;
+}
+
+/* ---------------------------------------------------- */
+/* 追加: 待機表示・トースト・モーダル・パレット・1手戻す */
+/* ---------------------------------------------------- */
+.control-panel {
+    flex-wrap: wrap;
+}
+
+.secondary-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: 0 3px #333;
+}
+
+/* サーバー起動待ちの表示 */
+#server-notice {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1200;
+    padding: 10px 14px;
+    text-align: center;
+    font-size: 0.95em;
+    font-weight: bold;
+    background: var(--color-accent);
+    color: #1c1c1c;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+/* トースト */
+#toast-container {
+    position: fixed;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1100;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: min(92vw, 420px);
+    pointer-events: none;
+}
+
+.toast {
+    pointer-events: auto;
+    cursor: pointer;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border-left: 5px solid var(--color-accent);
+    background: #1c1c1c;
+    color: var(--color-text-light);
+    font-size: 0.95em;
+    line-height: 1.5;
+    white-space: pre-line;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+}
+
+.toast-success {
+    border-left-color: var(--color-success);
+}
+
+.toast-error {
+    border-left-color: #ff6b6b;
+}
+
+/* モーダル */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    background: rgba(0, 0, 0, 0.72);
+}
+
+.modal {
+    width: 100%;
+    max-width: 420px;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 20px;
+    border-radius: 12px;
+    border: 2px solid var(--color-accent);
+    background: var(--color-secondary);
+    color: var(--color-text-light);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7);
+}
+
+.modal-title {
+    margin: 0 0 12px;
+    text-align: center;
+    color: var(--color-accent);
+}
+
+.modal-message {
+    margin: 0 0 16px;
+    text-align: center;
+    line-height: 1.7;
+    white-space: pre-line;
+}
+
+.modal-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.modal-actions button {
+    width: 100%;
+    min-height: 44px;
+}
+
+.modal-primary {
+    padding: 12px 18px;
+    border: none;
+    border-radius: 6px;
+    background: linear-gradient(145deg, #ffe34d, var(--color-accent));
+    color: #1c1c1c;
+    font-size: 1em;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 4px #a88a00;
+}
+
+.modal-primary:active {
+    transform: translateY(3px);
+    box-shadow: 0 1px #a88a00;
+}
+
+/* ワイルドカードのカタカナパレット */
+.wildcard-word {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    margin-bottom: 14px;
+}
+
+.wildcard-word span {
+    min-width: 2em;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: var(--color-tertiary);
+    text-align: center;
+    font-size: 1.2em;
+    font-weight: bold;
+}
+
+.wildcard-word .wildcard-target {
+    background: var(--color-accent);
+    color: #1c1c1c;
+}
+
+.palette-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+    max-height: 45vh;
+    overflow-y: auto;
+    padding: 2px;
+}
+
+.palette-key {
+    min-height: 44px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--color-tertiary);
+    color: var(--color-text-light);
+    font-size: 1.2em;
+    cursor: pointer;
+}
+
+.palette-key:hover,
+.palette-key:focus-visible {
+    outline: 2px solid var(--color-accent);
+    background: #4a4a4a;
+}
+
+.palette-key:active {
+    background: var(--color-accent);
+    color: #1c1c1c;
+}
+
+button:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+}
+
+/* ---------------------------------------------------- */
+/* 追加: アクセシビリティ・ルール折りたたみ・順位固定・シェア */
+/* ---------------------------------------------------- */
+[hidden] {
+    display: none !important;
+}
+
+/* 盤面のセル（button 化に伴うリセット） */
+button.cell {
+    position: relative;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border-radius: 0;
+    font-family: inherit;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.cell {
+    position: relative;
+}
+
+/* 選択中は色に加えて、内側の枠と選んだ順の数字で示す */
+.cell.selected {
+    box-shadow: inset 0 0 0 4px #1c1c1c;
+}
+
+.cell.selected::after {
+    content: attr(data-order);
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    min-width: 1.5em;
+    padding: 0 2px;
+    border-radius: 999px;
+    background: #1c1c1c;
+    color: var(--color-accent);
+    font-size: 0.45em;
+    font-weight: bold;
+    line-height: 1.5em;
+    text-align: center;
+}
+
+.cell:focus-visible {
+    outline: 3px solid #ffffff;
+    outline-offset: -5px;
+    z-index: 1;
+}
+
+.create-input:focus-visible,
+select:focus-visible,
+input:focus-visible,
+summary:focus-visible,
+.switch-link:focus-visible {
+    outline: 3px solid var(--color-accent);
+    outline-offset: 2px;
+}
+
+.selected-word {
+    min-height: 1.6em;
+    margin: 0 0 4px;
+    text-align: center;
+    font-size: 1.1em;
+    font-weight: bold;
+    color: var(--color-accent);
+}
+
+/* ルールの折りたたみ */
+details.game-rules > summary {
+    cursor: pointer;
+    padding: 6px 0;
+    font-weight: bold;
+    color: var(--color-accent);
+    list-style-position: inside;
+}
+
+details.game-rules[open] > summary {
+    margin-bottom: 8px;
+}
+
+/* ランキング: 自分の順位を固定表示 */
+.ranking-my-rank {
+    position: sticky;
+    top: 8px;
+    z-index: 5;
+    margin: 10px 0;
+    padding: 10px 12px;
+    border: 2px solid var(--color-accent);
+    border-radius: 8px;
+    background: var(--color-tertiary);
+    text-align: center;
+    font-weight: bold;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+}
+
+.you-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--color-accent);
+    color: #1c1c1c;
+    font-size: 0.8em;
+    font-weight: bold;
+}
+
+/* 動きを抑える設定に対応 */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+
+    button:hover,
+    button:active {
+        transform: none !important;
+    }
 }

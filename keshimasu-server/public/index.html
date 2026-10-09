@@ -3,11 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#1c1c1c">
     <title>国名ケシマス</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="app-container">
+    <main id="app-container">
         <h1 id="app-title">国名ケシマス</h1>
 
         <!-- 認証画面 -->
@@ -50,8 +52,8 @@
             >
             </p>
 
-            <div class="game-rules">
-                <h3>ゲームルール</h3>
+            <details class="game-rules">
+                <summary>ゲームルール（タップで開く）</summary>
                 <p>盤面の全ての文字を消去してクリアを目指すパズルゲームです。</p>
 
                 <ul class="rule-list">
@@ -63,7 +65,9 @@
                     <li>問題選択: 問題一覧から好きな問題を選んで挑戦できます。</li>
                     <li>リセット: 消し方を間違えた場合、リセットボタンで最初の盤面に戻れます。</li>
                 </ul>
-            </div>
+            </details>
+
+            <button id="btn-tutorial" type="button" class="switch-link">はじめての方へ：遊び方を見る</button>
 
             <div class="mode-selection">
                 <div class="mode-card">
@@ -131,8 +135,11 @@
             <div id="board" class="board-grid">
             </div>
 
+            <p id="selected-word-display" class="selected-word" aria-live="polite">選択中: なし</p>
+
             <div class="control-panel">
                 <button id="erase-button" disabled>消去する</button>
+                <button id="undo-button" class="secondary-btn" disabled>1手戻す</button>
                 <button id="reset-button" class="secondary-btn">リセット</button>
             </div>
 
@@ -145,7 +152,7 @@
         <!-- 問題制作画面 -->
         <div id="create-puzzle-screen" class="screen" style="display:none;">
             <h2>問題制作モード</h2>
-            <p>8x5マスのうち1マス以上に、カタカナ一文字か「F」（ワイルドカード）を入力してください。空きマスがあってもかまいません。<br>♂ ♀ Z 2 ・ はポケモンモードでのみ使えます。</p>
+            <p>8x5マス全てに、カタカナ一文字か「F」（ワイルドカード）を入力してください。</p>
 
             <div class="create-controls">
                 <label for="creation-mode-select">判定モード:</label>
@@ -161,7 +168,7 @@
                 </button>
             </div>
 
-            <p id="create-status">1マス以上に入力してください。</p>
+            <p id="create-status">残り40マスに入力が必要です。</p>
 
             <div id="create-board" class="board-grid create-grid">
             </div>
@@ -183,6 +190,8 @@
             </div>
 
             <p id="ranking-nickname-display">あなたの記録: ゲスト</p>
+
+            <p id="ranking-my-rank" class="ranking-my-rank" role="status" hidden></p>
 
             <div id="ranking-list-container">
             </div>
@@ -213,7 +222,7 @@
                 ホームに戻る
             </button>
         </div>
-    </div>
+    </main>
 
     <script src="script.js"></script>
 </body>

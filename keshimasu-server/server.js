@@ -1249,6 +1249,71 @@ app.get('/api/rankings/:type', async (req, res) => {
     code: error.code
 });
 
+// ------------------------------
+// GET /api/rankings/:type/me
+// ログイン中プレイヤーの順位（上位100位に入っていなくても取得できる）
+// ------------------------------
+function getRankingScoreExpression(type, alias) {
+    const prefix = alias ? `${alias}.` : '';
+
+    if (type === 'country') return `${prefix}country_clears`;
+    if (type === 'capital') return `${prefix}capital_clears`;
+    if (type === 'pokemon') return `${prefix}pokemon_clears`;
+
+    return `(${prefix}country_clears + ${prefix}capital_clears + ${prefix}pokemon_clears)`;
+}
+
+app.get('/api/rankings/:type/me', requireAuth, async (req, res) => {
+    const { type } = req.params;
+
+    if (!['total', 'country', 'capital', 'pokemon'].includes(type)) {
+        return res.status(400).json({
+            message: '無効なランキング種別です。'
+        });
+    }
+
+    // type は上で許可リストと照合済みのため、式をそのまま埋め込んでも安全
+    const mine = getRankingScoreExpression(type, 'pl');
+    const other = getRankingScoreExpression(type, 'p');
+
+    try {
+        // 一覧と同じ並び順（スコア降順、同点は登録が早い順）で順位を数える
+        const result = await db.query(
+            `
+            SELECT
+                (
+                    SELECT COUNT(*)::integer
+                    FROM players p
+                    WHERE ${other} > ${mine}
+                       OR (${other} = ${mine} AND p.created_at < pl.created_at)
+                ) + 1 AS rank,
+                ${mine} AS score,
+                (SELECT COUNT(*)::integer FROM players) AS total
+            FROM players pl
+            WHERE pl.id = $1;
+            `,
+            [req.auth.playerId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                message: 'プレイヤーが見つかりません。'
+            });
+        }
+
+        return res.json(result.rows[0]);
+    } catch (error) {
+        console.error('自分の順位の取得に失敗しました。', {
+            name: error.name,
+            code: error.code
+        });
+
+        return res.status(500).json({
+            message: '順位の取得中にエラーが発生しました。'
+        });
+    }
+});
+
         return res.status(500).json({
             message: 'ランキングの取得に失敗しました。'
         });

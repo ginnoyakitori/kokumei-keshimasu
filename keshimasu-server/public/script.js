@@ -90,6 +90,749 @@ const wordListTabs = document.getElementById('word-list-tabs');
  * HTMLへ埋め込む文字列を安全化する
  * サーバーや利用者から取得した文字列をinnerHTMLへ入れる前に使用する
  */
+// ----------------------------------------------------
+// UI部品: 通信リトライ・待機表示・トースト・モーダル・1手戻す
+// ----------------------------------------------------
+
+// ---------- サーバー起動待ちの表示と自動リトライ ----------
+// Renderの無料プランは、しばらく使われないとスリープする。
+// 復帰まで最大1分ほどかかるため、待っていることを伝えつつ自動で再試行する。
+const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+const RETRY_DELAY_MS = 4000;
+const SLOW_REQUEST_NOTICE_MS = 2500;
+let slowRequestCount = 0;
+
+function setServerNotice(message) {
+    let notice = document.getElementById('server-notice');
+
+    if (!notice) {
+        notice = document.createElement('div');
+        notice.id = 'server-notice';
+        notice.setAttribute('role', 'status');
+        notice.setAttribute('aria-live', 'polite');
+        document.body.appendChild(notice);
+    }
+
+    notice.textContent = message;
+}
+
+function hideServerNotice() {
+    const notice = document.getElementById('server-notice');
+
+    if (notice) {
+        notice.remove();
+    }
+}
+
+// GETと、やり直しても副作用のないログインだけ自動で再試行する
+// （登録・スコア更新などは二重実行を避けるため再試行しない）
+function getRetryCount(url, options) {
+    const method = String(options?.method || 'GET').toUpperCase();
+
+    if (method === 'GET') return 8;
+    if (String(url).endsWith('/player/login')) return 5;
+
+    return 0;
+}
+
+async function fetchWithRetry(url, options) {
+    const retries = getRetryCount(url, options);
+    let noticeShown = false;
+
+    const showNotice = (message) => {
+        if (!noticeShown) {
+            noticeShown = true;
+            slowRequestCount++;
+        }
+
+        setServerNotice(message);
+    };
+
+    const slowTimer = setTimeout(() => {
+        showNotice(
+            'サーバーに接続しています…（しばらく使っていなかった場合、最大1分ほどかかります）'
+        );
+    }, SLOW_REQUEST_NOTICE_MS);
+
+    try {
+        for (let attempt = 0; ; attempt++) {
+            try {
+                const response = await fetch(url, options);
+
+                if (
+                    !RETRYABLE_STATUSES.has(response.status) ||
+                    attempt >= retries
+                ) {
+                    return response;
+                }
+            } catch (error) {
+                if (attempt >= retries) {
+                    throw error;
+                }
+            }
+
+            showNotice(
+                `サーバーを起動しています。自動で再試行しています…（${attempt + 1}/${retries}）`
+            );
+
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+        }
+    } finally {
+        clearTimeout(slowTimer);
+
+        if (noticeShown) {
+            slowRequestCount = Math.max(0, slowRequestCount - 1);
+
+            if (slowRequestCount === 0) {
+                hideServerNotice();
+            }
+        }
+    }
+}
+
+// 処理中はボタンを無効にして、ラベルを切り替える
+async function withBusy(buttons, label, task) {
+    const list = [].concat(buttons).filter(Boolean);
+    const mainButton = list[0];
+    const originalLabel = mainButton ? mainButton.textContent : '';
+
+    list.forEach(button => { button.disabled = true; });
+
+    if (mainButton && label) {
+        mainButton.textContent = label;
+    }
+
+    try {
+        return await task();
+    } finally {
+        list.forEach(button => { button.disabled = false; });
+
+        if (mainButton) {
+            mainButton.textContent = originalLabel;
+        }
+    }
+}
+
+function runLogin() {
+    return withBusy(
+        [btnLoginSubmit, btnRegisterSubmit, btnGuestPlay],
+        'ログイン中…',
+        () => attemptLogin(inputNickname.value, inputPasscode.value)
+    );
+}
+
+function runRegister() {
+    return withBusy(
+        [btnRegisterSubmit, btnLoginSubmit, btnGuestPlay],
+        '登録中…',
+        () => attemptRegister(inputNickname.value, inputPasscode.value)
+    );
+}
+
+// ---------- トースト（画面の流れを止めない通知） ----------
+const TOAST_SUCCESS_PATTERN = /ログインしました|登録しました|クリアしました|完了しました/;
+const TOAST_ERROR_PATTERN = /失敗|できません|ありません|ませんでした|無効|正しくありません|エラー|必須|使用済み|見つかりません|入力してください|ログインしてください|が必要です|有効では/;
+
+function getToastContainer() {
+    let container = document.getElementById('toast-container');
+
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.setAttribute('role', 'status');
+        container.setAttribute('aria-live', 'polite');
+        document.body.appendChild(container);
+    }
+
+    return container;
+}
+
+// type: 'success' | 'error' | 'info'（省略時はメッセージから判定）
+function showToast(message, type) {
+    const text = String(message);
+    const toastType = type || (
+        TOAST_SUCCESS_PATTERN.test(text) ? 'success'
+            : TOAST_ERROR_PATTERN.test(text) ? 'error'
+                : 'info'
+    );
+
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${toastType}`;
+    toast.textContent = text;
+
+    const container = getToastContainer();
+    container.appendChild(toast);
+
+    while (container.children.length > 3) {
+        container.firstChild.remove();
+    }
+
+    const removeToast = () => toast.remove();
+
+    toast.addEventListener('click', removeToast);
+    setTimeout(removeToast, toastType === 'error' ? 5000 : 3500);
+}
+
+// ---------- モーダル ----------
+// content: 要素、または close を受け取って要素を返す関数
+// 戻り値: 押されたボタンの value（Escキーなら cancelValue）
+function openModal({ title, message, content, buttons = [], cancelValue = null }) {
+    return new Promise(resolve => {
+        const previouslyFocused = document.activeElement;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+
+        const dialog = document.createElement('div');
+        dialog.className = 'modal';
+        dialog.setAttribute('role', 'dialog');
+        dialog.setAttribute('aria-modal', 'true');
+
+        const close = (value) => {
+            document.removeEventListener('keydown', onKeyDown, true);
+            overlay.remove();
+
+            if (previouslyFocused && previouslyFocused.focus) {
+                previouslyFocused.focus();
+            }
+
+            resolve(value);
+        };
+
+        const getFocusable = () => [...dialog.querySelectorAll('button:not(:disabled)')];
+
+        function onKeyDown(event) {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                close(cancelValue);
+                return;
+            }
+
+            if (event.key === 'Tab') {
+                const focusable = getFocusable();
+
+                if (focusable.length === 0) return;
+
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+
+                if (event.shiftKey && document.activeElement === first) {
+                    event.preventDefault();
+                    last.focus();
+                } else if (!event.shiftKey && document.activeElement === last) {
+                    event.preventDefault();
+                    first.focus();
+                }
+            }
+        }
+
+        if (title) {
+            const heading = document.createElement('h3');
+            heading.className = 'modal-title';
+            heading.textContent = title;
+            dialog.appendChild(heading);
+            dialog.setAttribute('aria-label', title);
+        }
+
+        if (message) {
+            const paragraph = document.createElement('p');
+            paragraph.className = 'modal-message';
+            paragraph.textContent = message;
+            dialog.appendChild(paragraph);
+        }
+
+        if (content) {
+            dialog.appendChild(
+                typeof content === 'function' ? content(close) : content
+            );
+        }
+
+        if (buttons.length > 0) {
+            const actions = document.createElement('div');
+            actions.className = 'modal-actions';
+
+            buttons.forEach(({ label, value, secondary, action }) => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.textContent = label;
+                button.className = secondary ? 'secondary-btn' : 'modal-primary';
+                button.addEventListener('click', () => (action ? action() : close(value)));
+                actions.appendChild(button);
+            });
+
+            dialog.appendChild(actions);
+        }
+
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+        document.addEventListener('keydown', onKeyDown, true);
+
+        const firstFocusable = getFocusable()[0];
+
+        if (firstFocusable) {
+            firstFocusable.focus();
+        }
+    });
+}
+
+function showConfirm(message, { okText = 'OK', cancelText = 'キャンセル' } = {}) {
+    return openModal({
+        message,
+        buttons: [
+            { label: okText, value: true },
+            { label: cancelText, value: false, secondary: true }
+        ],
+        cancelValue: false
+    });
+}
+
+// ---------- ワイルドカード「F」用のカタカナパレット ----------
+const KANA_PALETTE_ROWS = [
+    ['ア', 'イ', 'ウ', 'エ', 'オ'],
+    ['カ', 'キ', 'ク', 'ケ', 'コ'],
+    ['サ', 'シ', 'ス', 'セ', 'ソ'],
+    ['タ', 'チ', 'ツ', 'テ', 'ト'],
+    ['ナ', 'ニ', 'ヌ', 'ネ', 'ノ'],
+    ['ハ', 'ヒ', 'フ', 'ヘ', 'ホ'],
+    ['マ', 'ミ', 'ム', 'メ', 'モ'],
+    ['ヤ', '', 'ユ', '', 'ヨ'],
+    ['ラ', 'リ', 'ル', 'レ', 'ロ'],
+    ['ワ', 'ヲ', 'ン', 'ー', 'ッ'],
+    ['ガ', 'ギ', 'グ', 'ゲ', 'ゴ'],
+    ['ザ', 'ジ', 'ズ', 'ゼ', 'ゾ'],
+    ['ダ', 'ヂ', 'ヅ', 'デ', 'ド'],
+    ['バ', 'ビ', 'ブ', 'ベ', 'ボ'],
+    ['パ', 'ピ', 'プ', 'ペ', 'ポ'],
+    ['ャ', 'ュ', 'ョ', 'ヴ', ''],
+    ['ァ', 'ィ', 'ゥ', 'ェ', 'ォ']
+];
+
+// ポケモンモードだけで使える文字（isValidGameChar と同じ条件）
+const POKEMON_PALETTE_ROW = ['♂', '♀', 'Z', '2', '・'];
+
+// chars: 選択中の文字列（Fを含む）、targetIndex: 今決めるFの位置
+// 戻り値: 選ばれた1文字（キャンセルなら null）
+function askWildcardChar(chars, targetIndex, mode) {
+    const rows = [...KANA_PALETTE_ROWS];
+
+    if (mode === 'pokemon') {
+        rows.push(POKEMON_PALETTE_ROW);
+    }
+
+    return openModal({
+        title: `${targetIndex + 1}文字目（F）を何にしますか？`,
+        content: (close) => {
+            const wrapper = document.createElement('div');
+
+            const preview = document.createElement('div');
+            preview.className = 'wildcard-word';
+
+            chars.forEach((char, index) => {
+                const span = document.createElement('span');
+                span.textContent = index === targetIndex ? '？' : char;
+
+                if (index === targetIndex) {
+                    span.className = 'wildcard-target';
+                }
+
+                preview.appendChild(span);
+            });
+
+            const grid = document.createElement('div');
+            grid.className = 'palette-grid';
+
+            rows.flat().forEach(char => {
+                if (!char) {
+                    const spacer = document.createElement('span');
+                    spacer.className = 'palette-spacer';
+                    grid.appendChild(spacer);
+                    return;
+                }
+
+                if (!isValidGameChar(char, mode)) {
+                    return;
+                }
+
+                const key = document.createElement('button');
+                key.type = 'button';
+                key.className = 'palette-key';
+                key.textContent = char;
+                key.setAttribute('aria-label', char);
+                key.addEventListener('click', () => close(char));
+                grid.appendChild(key);
+            });
+
+            wrapper.appendChild(preview);
+            wrapper.appendChild(grid);
+
+            return wrapper;
+        },
+        buttons: [{ label: 'キャンセル', value: null, secondary: true }],
+        cancelValue: null
+    });
+}
+
+// ---------- クリア結果と「次の問題へ」 ----------
+// 現在の問題の次に挑戦できる未クリアの問題IDを返す（無ければ null）
+function findNextPuzzleId(mode, currentId) {
+    const puzzles = [...(allPuzzles[mode]?.puzzles || [])].sort(
+        (a, b) => Number(a.id) - Number(b.id)
+    );
+
+    const clearedIds = new Set(
+        [
+            ...(allPuzzles[mode]?.cleared_ids || []),
+            ...getClearedPuzzles(mode)
+        ].map(id => Number(id))
+    );
+
+    // 今クリアした問題は、通信の反映前でもクリア済みとして扱う
+    clearedIds.add(Number(currentId));
+
+    const isUnsolved = puzzle => !clearedIds.has(Number(puzzle.id));
+
+    const next =
+        puzzles.find(p => Number(p.id) > Number(currentId) && isUnsolved(p)) ||
+        puzzles.find(isUnsolved);
+
+    return next ? Number(next.id) : null;
+}
+
+// 戻り値: 'next' | 'list' | 'home'
+function showClearResult(modeName, clearedCount, hasNext, shareText) {
+    const buttons = [];
+
+    if (hasNext) {
+        buttons.push({ label: '次の問題へ', value: 'next' });
+    }
+
+    if (shareText) {
+        buttons.push({
+            label: '結果をシェアする',
+            secondary: true,
+            action: () => shareResult(shareText)
+        });
+    }
+
+    buttons.push(
+        { label: '問題一覧へ', value: 'list', secondary: true },
+        { label: 'ホームへ', value: 'home', secondary: true }
+    );
+
+    return openModal({
+        title: '🎉 クリア！',
+        message:
+            `全ての文字を消去しました！\n` +
+            `あなたの${modeName}クリア数は${clearedCount}問になりました。` +
+            (hasNext ? '' : '\n挑戦できる未クリアの問題はもうありません。'),
+        buttons,
+        cancelValue: 'home'
+    });
+}
+
+// ---------- 1手戻す ----------
+let moveHistory = [];
+
+function updateUndoButton() {
+    const button = document.getElementById('undo-button');
+
+    if (button) {
+        button.disabled = moveHistory.length === 0;
+    }
+}
+
+function resetMoveHistory() {
+    moveHistory = [];
+    updateUndoButton();
+}
+
+function undoLastMove() {
+    const last = moveHistory.pop();
+
+    if (!last) return;
+
+    boardData = last.board;
+    usedWords = last.usedWords;
+    selectedCells = [];
+    eraseButton.disabled = true;
+
+    renderBoard(5);
+    updateStatusDisplay();
+    updateUndoButton();
+}
+
+// ---------- SNSシェア ----------
+async function shareResult(text) {
+    const url = `${location.origin}/`;
+
+    // スマホなどは端末の共有メニューを使う
+    if (navigator.share) {
+        try {
+            await navigator.share({ text, url });
+            return;
+        } catch (error) {
+            if (error && error.name === 'AbortError') {
+                return;
+            }
+        }
+    }
+
+    const intentUrl =
+        'https://twitter.com/intent/tweet' +
+        `?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
+
+    const opened = window.open(intentUrl, '_blank', 'noopener,noreferrer');
+
+    if (!opened) {
+        try {
+            await navigator.clipboard.writeText(`${text} ${url}`);
+            showToast('シェア用の文章をコピーしました。', 'success');
+        } catch {
+            showToast('シェア画面を開けませんでした。', 'error');
+        }
+    }
+}
+
+// ---------- ランキング: 自分の順位の固定表示 ----------
+let rankingRequestCounter = 0;
+
+async function updateMyRank(type, requestId) {
+    const element = document.getElementById('ranking-my-rank');
+
+    if (!element) return;
+
+    if (!isLoggedIn()) {
+        element.hidden = false;
+        element.textContent = 'ログインすると、あなたの順位がここに固定表示されます。';
+        return;
+    }
+
+    try {
+        const response = await fetchWithRetry(
+            `${API_BASE_URL}/rankings/${encodeURIComponent(type)}/me`,
+            {
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json' }
+            }
+        );
+
+        if (!response.ok) {
+            throw new Error('順位の取得に失敗しました。');
+        }
+
+        const data = await response.json();
+
+        if (requestId !== rankingRequestCounter) return;
+
+        element.hidden = false;
+        element.textContent =
+            `あなたの順位: ${Number(data.rank)}位 / ${Number(data.total)}人中` +
+            `（クリア数 ${Number(data.score)}問）`;
+    } catch {
+        if (requestId === rankingRequestCounter) {
+            element.hidden = true;
+        }
+    }
+}
+
+// ---------- 作問画面: 自動移動・矢印キー・貼り付け ----------
+const CREATE_COLUMNS = 5;
+
+function getCreateInputs() {
+    return [...document.querySelectorAll('.create-input')];
+}
+
+// 1文字入力できたら、次のマスへ移動する
+function advanceCreateFocus(input) {
+    if (document.activeElement !== input || input.value.length !== 1) {
+        return;
+    }
+
+    const inputs = getCreateInputs();
+    const next = inputs[inputs.indexOf(input) + 1];
+
+    if (next) {
+        next.focus();
+    }
+}
+
+function handleCreateInputKeydown(event) {
+    if (event.isComposing) return;
+
+    const inputs = getCreateInputs();
+    const index = inputs.indexOf(event.target);
+
+    if (index < 0) return;
+
+    let nextIndex = null;
+
+    if (event.key === 'ArrowLeft') nextIndex = index - 1;
+    else if (event.key === 'ArrowRight') nextIndex = index + 1;
+    else if (event.key === 'ArrowUp') nextIndex = index - CREATE_COLUMNS;
+    else if (event.key === 'ArrowDown') nextIndex = index + CREATE_COLUMNS;
+    else if (event.key === 'Backspace' && event.target.value === '') nextIndex = index - 1;
+
+    if (nextIndex === null) return;
+
+    event.preventDefault();
+
+    if (inputs[nextIndex]) {
+        inputs[nextIndex].focus();
+    }
+}
+
+// 貼り付け: 1行なら現在のマスから順に、複数行なら1行を1段として入力する
+// （空白・全角空白・_・□ は空きマスとして扱う）
+function handleCreatePaste(event) {
+    const text = (event.clipboardData || window.clipboardData)?.getData('text') || '';
+
+    if (!text) return;
+
+    event.preventDefault();
+
+    const inputs = getCreateInputs();
+    const startIndex = inputs.indexOf(event.target);
+
+    if (startIndex < 0) return;
+
+    const mode = getCreationMode();
+    const startColumn = startIndex % CREATE_COLUMNS;
+    const startRow = Math.floor(startIndex / CREATE_COLUMNS);
+    let skipped = 0;
+    let lastWritten = startIndex;
+
+    const writeCell = (index, rawChar) => {
+        if (index < 0 || index >= inputs.length) return false;
+
+        lastWritten = index;
+
+        if (/[\s\u3000_□]/u.test(rawChar)) {
+            inputs[index].value = '';
+            return true;
+        }
+
+        const char = toKatakana(rawChar.normalize('NFKC')).toUpperCase();
+
+        if (isValidGameChar(char, mode)) {
+            inputs[index].value = char;
+        } else {
+            skipped++;
+        }
+
+        return true;
+    };
+
+    const lines = text
+        .replace(/\r/g, '')
+        .split('\n')
+        .filter((line, i, all) => !(line === '' && i === all.length - 1));
+
+    if (lines.length > 1) {
+        lines.forEach((line, lineIndex) => {
+            const row = startRow + lineIndex;
+            const firstColumn = lineIndex === 0 ? startColumn : 0;
+
+            [...line].slice(0, CREATE_COLUMNS - firstColumn).forEach((char, i) => {
+                writeCell(row * CREATE_COLUMNS + firstColumn + i, char);
+            });
+        });
+    } else {
+        [...lines[0]].forEach((char, i) => {
+            writeCell(startIndex + i, char);
+        });
+    }
+
+    checkCreationInput();
+
+    const nextInput = inputs[Math.min(lastWritten + 1, inputs.length - 1)];
+
+    if (nextInput) {
+        nextInput.focus();
+    }
+
+    if (skipped > 0) {
+        showToast(`使えない文字を${skipped}個スキップしました。`, 'info');
+    }
+}
+
+// ---------- 初回だけの短いチュートリアル ----------
+const TUTORIAL_STORAGE_KEY = 'keshimasu_tutorial_seen_v1';
+let tutorialScheduled = false;
+
+const TUTORIAL_STEPS = [
+    {
+        title: '文字をつなげて選ぶ',
+        message:
+            '盤面の文字を、縦か横に一直線になるように順番に選びます。\n' +
+            '例：「ア」「メ」「リ」「カ」と選ぶと「アメリカ」になります。'
+    },
+    {
+        title: 'ワードになったら消す',
+        message:
+            '国名・首都名・ポケモン名になったら「消去する」を押します。\n' +
+            '消えた文字の上にあった文字は下に落ちます。\n' +
+            '「F」は、好きな文字の代わりに使えるワイルドカードです。'
+    },
+    {
+        title: '全部消せばクリア',
+        message:
+            '同じワードは1回しか使えません。\n' +
+            'まちがえたら「1手戻す」か「リセット」。\n' +
+            '盤面の文字をすべて消したらクリアです！'
+    }
+];
+
+function hasSeenTutorial() {
+    try {
+        return localStorage.getItem(TUTORIAL_STORAGE_KEY) === '1';
+    } catch {
+        return false;
+    }
+}
+
+function markTutorialSeen() {
+    try {
+        localStorage.setItem(TUTORIAL_STORAGE_KEY, '1');
+    } catch {
+        // 保存できなくても、遊ぶことには影響しない
+    }
+}
+
+async function showTutorial() {
+    for (let i = 0; i < TUTORIAL_STEPS.length; i++) {
+        const step = TUTORIAL_STEPS[i];
+        const isLast = i === TUTORIAL_STEPS.length - 1;
+
+        const choice = await openModal({
+            title: `遊び方 ${i + 1}/${TUTORIAL_STEPS.length}　${step.title}`,
+            message: step.message,
+            buttons: [
+                { label: isLast ? 'はじめる' : 'つぎへ', value: 'next' },
+                ...(isLast ? [] : [{ label: 'スキップ', value: 'skip', secondary: true }])
+            ],
+            cancelValue: 'skip'
+        });
+
+        if (choice === 'skip') break;
+    }
+
+    markTutorialSeen();
+}
+
+// ホーム画面を初めて開いたときだけ表示する
+function scheduleTutorial() {
+    if (tutorialScheduled || hasSeenTutorial()) return;
+
+    tutorialScheduled = true;
+    setTimeout(showTutorial, 400);
+}
+
+const btnTutorial = document.getElementById('btn-tutorial');
+
+if (btnTutorial) {
+    btnTutorial.addEventListener('click', showTutorial);
+}
+
 function escapeHtml(value) {
     return String(value ?? '')
         .replaceAll('&', '&amp;')
@@ -196,7 +939,7 @@ async function loadDictionariesOnce() {
 
     const responses = await Promise.all(
         ['country', 'capital', 'pokemon'].map(mode =>
-            fetch(
+            fetchWithRetry(
                 `${API_BASE_URL}/words/${mode}`,
                 {
                     credentials: 'same-origin'
@@ -233,7 +976,7 @@ async function loadPuzzlesAndWords() {
     try {
         const puzzleResults = await Promise.all(
             modeList.map(async mode => {
-                const response = await fetch(
+                const response = await fetchWithRetry(
                     `${API_BASE_URL}/puzzles/${mode}`,
                     {
                         credentials: 'same-origin',
@@ -283,14 +1026,14 @@ async function loadPuzzlesAndWords() {
             }
         );
 
-        alert(
+        showToast(
             '問題データを読み込めませんでした。時間を空けて再試行してください。'
         );
     }
 }
 async function getCurrentPlayer() {
     try {
-        const response = await fetch(
+        const response = await fetchWithRetry(
             `${API_BASE_URL}/player/me`,
             {
                 method: 'GET',
@@ -417,7 +1160,7 @@ async function attemptLogin(nickname, passcode) {
             : '';
 
     if (!finalName || typeof passcode !== 'string' || !passcode) {
-        alert(
+        showToast(
             'ニックネームとパスコードの両方を入力してください。'
         );
 
@@ -425,12 +1168,12 @@ async function attemptLogin(nickname, passcode) {
     }
 
     if ([...finalName].length > 20) {
-        alert('ニックネームは20文字以内で入力してください。');
+        showToast('ニックネームは20文字以内で入力してください。');
         return false;
     }
 
     try {
-        const response = await fetch(
+        const response = await fetchWithRetry(
             `${API_BASE_URL}/player/login`,
             {
                 method: 'POST',
@@ -449,7 +1192,7 @@ async function attemptLogin(nickname, passcode) {
         const data = await response.json().catch(() => null);
 
         if (!response.ok) {
-            alert(
+            showToast(
                 data?.message ||
                 'ログインに失敗しました。'
             );
@@ -459,7 +1202,7 @@ async function attemptLogin(nickname, passcode) {
         }
 
         if (!data?.player) {
-            alert('プレイヤー情報を取得できませんでした。');
+            showToast('プレイヤー情報を取得できませんでした。');
             return false;
         }
 
@@ -468,7 +1211,7 @@ async function attemptLogin(nickname, passcode) {
 
         await loadPuzzlesAndWords();
 
-        alert(
+        showToast(
             `${currentPlayerNickname}さん、ログインしました。`
         );
 
@@ -482,7 +1225,7 @@ async function attemptLogin(nickname, passcode) {
             }
         );
 
-        alert(
+        showToast(
             'ネットワークエラーによりログインできませんでした。'
         );
 
@@ -496,7 +1239,7 @@ async function attemptRegister(nickname, passcode) {
             : '';
 
     if (!finalName || typeof passcode !== 'string' || !passcode) {
-        alert(
+        showToast(
             'ニックネームとパスコードの両方を入力してください。'
         );
 
@@ -504,12 +1247,12 @@ async function attemptRegister(nickname, passcode) {
     }
 
     if ([...finalName].length > 20) {
-        alert('ニックネームは20文字以内で入力してください。');
+        showToast('ニックネームは20文字以内で入力してください。');
         return false;
     }
 
     if (passcode.length < 8 || passcode.length > 72) {
-        alert(
+        showToast(
             'パスコードは8文字以上72文字以内で入力してください。'
         );
 
@@ -517,7 +1260,7 @@ async function attemptRegister(nickname, passcode) {
     }
 
     try {
-        const response = await fetch(
+        const response = await fetchWithRetry(
             `${API_BASE_URL}/player/register`,
             {
                 method: 'POST',
@@ -536,7 +1279,7 @@ async function attemptRegister(nickname, passcode) {
         const data = await response.json().catch(() => null);
 
         if (!response.ok) {
-            alert(
+            showToast(
                 data?.message ||
                 '新規登録に失敗しました。'
             );
@@ -546,7 +1289,7 @@ async function attemptRegister(nickname, passcode) {
         }
 
         if (!data?.player) {
-            alert('プレイヤー情報を取得できませんでした。');
+            showToast('プレイヤー情報を取得できませんでした。');
             return false;
         }
 
@@ -555,7 +1298,7 @@ async function attemptRegister(nickname, passcode) {
 
         await loadPuzzlesAndWords();
 
-        alert(
+        showToast(
             `${currentPlayerNickname}さん、新規登録しました。`
         );
 
@@ -569,7 +1312,7 @@ async function attemptRegister(nickname, passcode) {
             }
         );
 
-        alert(
+        showToast(
             'ネットワークエラーにより新規登録できませんでした。'
         );
 
@@ -621,6 +1364,7 @@ function showScreen(screenName) {
     if (screenName === 'home') {
         appTitleElement.style.display = 'block';
         updateHomeProblemCount();
+        scheduleTutorial();
 
         if (isLoggedIn() && currentPlayerNickname) {
             welcomeMessage.textContent = `${currentPlayerNickname}さん、ようこそ！`;
@@ -668,7 +1412,7 @@ function updateHomeProblemCount() {
 // ----------------------------------------------------
 function showPuzzleListByMode(mode) {
     if (!isValidMode(mode)) {
-        alert('無効なモードです。');
+        showToast('無効なモードです。');
         return;
     }
 
@@ -752,7 +1496,7 @@ function showPuzzleList(isCountry) {
 
 function startPuzzleById(mode, puzzleId) {
     if (!isValidMode(mode)) {
-        alert('無効なモードです。');
+        showToast('無効なモードです。');
         showScreen('home');
         return;
     }
@@ -767,7 +1511,7 @@ function startPuzzleById(mode, puzzleId) {
     );
 
     if (!selectedPuzzle) {
-        alert('選択された問題が見つかりませんでした。');
+        showToast('選択された問題が見つかりませんでした。');
         showScreen('home');
         return;
     }
@@ -789,6 +1533,7 @@ function startPuzzleById(mode, puzzleId) {
 
     selectedCells = [];
     usedWords = [];
+    resetMoveHistory();
     eraseButton.disabled = true;
 
     document.getElementById('current-game-title').textContent = getModeName(mode);
@@ -807,7 +1552,7 @@ function startPuzzleById(mode, puzzleId) {
 // ----------------------------------------------------
 function startGameByMode(mode, isCreation) {
     if (!isValidMode(mode)) {
-        alert('無効なモードです。');
+        showToast('無効なモードです。');
         return;
     }
 
@@ -833,7 +1578,7 @@ function startGameByMode(mode, isCreation) {
         );
 
         if (availablePuzzles.length === 0) {
-            alert(`🎉 ${getModeName(mode)}のすべての問題をクリアしました！`);
+            showToast(`🎉 ${getModeName(mode)}のすべての問題をクリアしました！`);
             showScreen('home');
             return;
         }
@@ -861,6 +1606,7 @@ function startGameByMode(mode, isCreation) {
 
     selectedCells = [];
     usedWords = [];
+    resetMoveHistory();
     eraseButton.disabled = true;
 
     document.getElementById('current-game-title').textContent = getModeName(mode);
@@ -889,38 +1635,144 @@ function startGame(isCountry, isCreation) {
 // 盤面描画
 // ----------------------------------------------------
 function renderBoard(visibleRows) {
+    // 再描画でフォーカスが外れないよう、フォーカス中のセルを覚えておく
+    const active = document.activeElement;
+    const hadFocus =
+        active &&
+        boardElement.contains(active) &&
+        active.dataset.r !== undefined;
+    const focusR = hadFocus ? active.dataset.r : null;
+    const focusC = hadFocus ? active.dataset.c : null;
+
     boardElement.innerHTML = '';
+    boardElement.setAttribute('role', 'group');
+    boardElement.setAttribute('aria-label', '盤面');
 
     const startRow = boardData.length - visibleRows;
 
     for (let r = startRow; r < boardData.length; r++) {
         for (let c = 0; c < boardData[r].length; c++) {
-            const cell = document.createElement('div');
             const char = boardData[r][c];
+            const order = selectedCells.findIndex(
+                coord => coord[0] === r && coord[1] === c
+            );
 
-            cell.classList.add('cell');
+            let cell;
+
+            if (char === '') {
+                // 空きマスは読み上げ・操作の対象にしない
+                cell = document.createElement('div');
+                cell.className = 'cell empty';
+                cell.setAttribute('aria-hidden', 'true');
+            } else {
+                // キーボード操作・読み上げに対応するため button にする
+                cell = document.createElement('button');
+                cell.type = 'button';
+                cell.className = 'cell';
+                cell.setAttribute(
+                    'aria-label',
+                    `${char}、${r - startRow + 1}行目${c + 1}列目`
+                );
+                cell.setAttribute('aria-pressed', order > -1 ? 'true' : 'false');
+                cell.addEventListener('click', handleCellClick);
+            }
+
             cell.dataset.r = r;
             cell.dataset.c = c;
             cell.textContent = char;
 
-            if (char === '') {
-                cell.classList.add('empty');
-            } else {
-                cell.addEventListener('click', handleCellClick);
-            }
-
-            const isSelected = selectedCells.some(
-                coord => coord[0] === r && coord[1] === c
-            );
-
-            if (isSelected) {
+            if (order > -1) {
                 cell.classList.add('selected');
+                // 色だけに頼らず、選んだ順番を数字で表示する
+                cell.dataset.order = String(order + 1);
             }
 
             boardElement.appendChild(cell);
         }
     }
+
+    if (hadFocus) {
+        const next = boardElement.querySelector(
+            `button.cell[data-r="${focusR}"][data-c="${focusC}"]`
+        );
+
+        if (next) {
+            next.focus();
+        }
+    }
+
+    updateSelectedWordDisplay();
 }
+
+// 選択中の文字列を表示する（スクリーンリーダーにも読み上げられる）
+function updateSelectedWordDisplay() {
+    const element = document.getElementById('selected-word-display');
+
+    if (!element) return;
+
+    if (selectedCells.length === 0) {
+        element.textContent = '選択中: なし';
+        return;
+    }
+
+    const firstRow = selectedCells[0][0];
+    const isHorizontal = selectedCells.every(coord => coord[0] === firstRow);
+    const sorted = [...selectedCells].sort((a, b) =>
+        isHorizontal ? a[1] - b[1] : a[0] - b[0]
+    );
+
+    element.textContent =
+        `選択中: ${sorted.map(([r, c]) => boardData[r][c]).join('')}`;
+}
+
+// 矢印キーでセル間を移動、Escで選択解除
+boardElement.addEventListener('keydown', (event) => {
+    const target = event.target;
+
+    if (!(target instanceof HTMLElement) || target.dataset.r === undefined) {
+        return;
+    }
+
+    if (event.key === 'Escape') {
+        selectedCells = [];
+        eraseButton.disabled = true;
+        renderBoard(5);
+        return;
+    }
+
+    const delta = {
+        ArrowUp: [-1, 0],
+        ArrowDown: [1, 0],
+        ArrowLeft: [0, -1],
+        ArrowRight: [0, 1]
+    }[event.key];
+
+    if (!delta) return;
+
+    event.preventDefault();
+
+    let r = Number(target.dataset.r);
+    let c = Number(target.dataset.c);
+
+    // 空きマスは飛ばして、その方向の次の文字セルへ移動する
+    for (;;) {
+        r += delta[0];
+        c += delta[1];
+
+        if (r < 0 || r >= boardData.length || c < 0 || c >= (boardData[0] || []).length) {
+            return;
+        }
+
+        const next = boardElement.querySelector(
+            `button.cell[data-r="${r}"][data-c="${c}"]`
+        );
+
+        if (next) {
+            next.focus();
+            return;
+        }
+    }
+});
 
 function updateStatusDisplay() {
     document.getElementById('used-words-display').textContent =
@@ -952,7 +1804,7 @@ async function updatePlayerScore(mode, puzzleId) {
     }
 
     try {
-        const response = await fetch(
+        const response = await fetchWithRetry(
             `${API_BASE_URL}/score/update`,
             {
                 method: 'POST',
@@ -973,7 +1825,7 @@ async function updatePlayerScore(mode, puzzleId) {
         if (response.status === 401) {
              clearLocalPlayerState();
 
-            alert(
+            showToast(
                 'ログインの有効期限が切れました。再度ログインしてください。'
             );
 
@@ -1009,13 +1861,13 @@ async function submitNewPuzzle(mode, newBoardData) {
         !isLoggedIn() ||
         !currentPlayerNickname
     ) {
-        alert('問題を登録するにはログインが必要です。');
+        showToast('問題を登録するにはログインが必要です。');
         showScreen('auth');
         return false;
     }
 
     if (!isValidMode(mode)) {
-        alert('無効なモードです。');
+        showToast('無効なモードです。');
         return false;
     }
 
@@ -1033,12 +1885,12 @@ async function submitNewPuzzle(mode, newBoardData) {
                 )
         )
     ) {
-        alert('盤面データの形式が正しくありません。');
+        showToast('盤面データの形式が正しくありません。');
         return false;
     }
 
     try {
-        const response = await fetch(
+        const response = await fetchWithRetry(
             `${API_BASE_URL}/puzzles`,
             {
                 method: 'POST',
@@ -1059,7 +1911,7 @@ async function submitNewPuzzle(mode, newBoardData) {
         if (response.status === 401) {
             clearLocalPlayerState();
 
-            alert(
+            showToast(
                 'ログインの有効期限が切れました。再度ログインしてください。'
             );
 
@@ -1068,7 +1920,7 @@ async function submitNewPuzzle(mode, newBoardData) {
         }
 
         if (!response.ok) {
-            alert(
+            showToast(
                 data?.message ||
                 '問題を登録できませんでした。'
             );
@@ -1079,7 +1931,7 @@ async function submitNewPuzzle(mode, newBoardData) {
         const creatorName =
             data?.puzzle?.creator || currentPlayerNickname;
 
-        alert(
+        showToast(
             `問題を登録しました。\n` +
             `制作者: ${creatorName}\n` +
             'この問題は今後、標準問題として出題されます。'
@@ -1092,7 +1944,7 @@ async function submitNewPuzzle(mode, newBoardData) {
             name: error.name
         });
 
-        alert(
+        showToast(
             'ネットワークエラーにより問題を登録できませんでした。'
         );
 
@@ -1122,19 +1974,38 @@ async function checkGameStatus() {
             }
         }
 
+        const clearedPuzzleId = currentPuzzleId;
         const latestClearedCount = playerStats[`${mode}_clears`] || 0;
 
-        alert(
-            `🎉 全ての文字を消去しました！クリアです！\nあなたの${modeName}クリア数は${latestClearedCount}問になりました。`
-        );
+        const problemLabel = document
+            .getElementById('problem-number-display')
+            .textContent.trim();
 
+        const shareText =
+            `「${getModeName(mode)}」${problemLabel}をクリアしました！` +
+            `（${modeName}クリア数: ${latestClearedCount}問） #国名ケシマス`;
+
+        // 最新のクリア状況を取り直してから、次の問題を探す
         await loadPuzzlesAndWords();
-        showScreen('home');
 
-    } else {
-        const registrationConfirmed = confirm(
-            '🎉 作成した問題をクリアしました！\nこの問題を標準問題として登録しますか？'
+        const nextPuzzleId = findNextPuzzleId(mode, clearedPuzzleId);
+
+        const choice = await showClearResult(
+            modeName,
+            latestClearedCount,
+            nextPuzzleId !== null,
+            shareText
         );
+
+        if (choice === 'next' && nextPuzzleId !== null) {
+            startPuzzleById(mode, nextPuzzleId);
+        } else if (choice === 'list') {
+            showPuzzleListByMode(mode);
+        } else {
+            showScreen('home');
+        }
+    } else {
+        const registrationConfirmed = await showConfirm('🎉 作成した問題をクリアしました！\nこの問題を標準問題として登録しますか？', { okText: '登録する', cancelText: '登録しない' });
 
         if (registrationConfirmed) {
             const finalBoard = JSON.parse(JSON.stringify(initialPlayData));
@@ -1147,7 +2018,7 @@ if (registered) {
     showScreen('home');
 }
         } else {
-            alert('問題の登録をスキップしました。作成画面に戻ります。');
+            showToast('問題の登録をスキップしました。作成画面に戻ります。');
 
             showScreen('create');
             renderCreateBoard();
@@ -1255,6 +2126,12 @@ function handleCellClick(event) {
     renderBoard(5);
 }
 
+const undoButton = document.getElementById('undo-button');
+
+if (undoButton) {
+    undoButton.addEventListener('click', undoLastMove);
+}
+
 eraseButton.addEventListener('click', async () => {
     if (selectedCells.length < 2) return;
 
@@ -1287,22 +2164,19 @@ eraseButton.addEventListener('click', async () => {
         });
 
         for (const index of fIndices) {
-            const promptText = `「${selectedWord}」のうち、${index + 1}文字目（F）を何にしますか？`;
-            const input = prompt(promptText);
+            // 画面内のカタカナパレットから選ぶ（スマホでも操作しやすい）
+            const chosenChar = await askWildcardChar(
+                tempWordChars,
+                index,
+                currentMode
+            );
 
-            if (input && input.trim() !== '') {
-                const inputChar = toKatakana(input).toUpperCase().slice(0, 1);
-
-                if (!isValidGameChar(inputChar, currentMode)) {
-                    alert('入力された文字は有効ではありません。');
-                    return;
-                }
-
-                tempWordChars[index] = inputChar;
-            } else {
-                alert('文字が入力されませんでした。');
+            if (!chosenChar) {
+                showToast('文字の選択をキャンセルしました。', 'info');
                 return;
             }
+
+            tempWordChars[index] = chosenChar;
         }
 
         finalWord = tempWordChars.join('');
@@ -1311,14 +2185,25 @@ eraseButton.addEventListener('click', async () => {
     }
 
     if (!currentDictionary.has(finalWord)) {
-        alert(`「${finalWord}」は有効な${modeLabel}ではありません。`);
+        showToast(`「${finalWord}」は有効な${modeLabel}ではありません。`);
         return;
     }
 
     if (usedWords.includes(finalWord)) {
-        alert(`「${finalWord}」は既に使用済みです。`);
+        showToast(`「${finalWord}」は既に使用済みです。`);
         return;
     }
+
+    // 1手戻す用に、消去前の盤面と使用済みワードを保存する
+
+    moveHistory.push({
+
+        board: JSON.parse(JSON.stringify(boardData)),
+
+        usedWords: [...usedWords]
+
+    });
+
 
     selectedCells.forEach(([r, c]) => {
         boardData[r][c] = '';
@@ -1334,6 +2219,7 @@ eraseButton.addEventListener('click', async () => {
     renderBoard(5);
     updateStatusDisplay();
 
+    updateUndoButton();
     await checkGameStatus();
 });
 
@@ -1356,6 +2242,7 @@ resetBtn.addEventListener('click', () => {
 
         selectedCells = [];
         usedWords = [];
+        resetMoveHistory();
         eraseButton.disabled = true;
 
         renderBoard(5);
@@ -1388,11 +2275,13 @@ function renderCreateBoard() {
             input.addEventListener('compositionend', (e) => {
                 isComposing = false;
                 checkCreationInput(e);
+                advanceCreateFocus(input);
             });
 
             input.addEventListener('input', (e) => {
                 if (!isComposing) {
                     checkCreationInput(e);
+                    advanceCreateFocus(input);
                 }
             });
 
@@ -1400,6 +2289,11 @@ function renderCreateBoard() {
                 isComposing = false;
                 checkCreationInput(e);
             });
+
+            input.setAttribute('aria-label', `${r + 1}行${c + 1}列`);
+            input.addEventListener('focus', () => input.select());
+            input.addEventListener('keydown', handleCreateInputKeydown);
+            input.addEventListener('paste', handleCreatePaste);
 
             cell.appendChild(input);
             createBoardElement.appendChild(cell);
@@ -1523,6 +2417,13 @@ async function fetchAndDisplayRanking(type) {
         'ranking-nickname-display'
     );
 
+    const requestId = ++rankingRequestCounter;
+    const myRankElement = document.getElementById('ranking-my-rank');
+
+    if (myRankElement) {
+        myRankElement.hidden = true;
+    }
+
     container.classList.remove('ranking-error');
     container.textContent = `${type}ランキングをサーバーから取得中...`;
 
@@ -1547,7 +2448,7 @@ async function fetchAndDisplayRanking(type) {
         `合計: ${totalScore})`;
 
     try {
-        const response = await fetch(
+        const response = await fetchWithRetry(
             `${API_BASE_URL}/rankings/${encodeURIComponent(type)}`
         );
 
@@ -1556,6 +2457,11 @@ async function fetchAndDisplayRanking(type) {
         }
 
         const rankings = await response.json();
+
+        // 素早くタブを切り替えたとき、古い結果で上書きしない
+        if (requestId !== rankingRequestCounter) {
+            return;
+        }
 
         if (!Array.isArray(rankings)) {
             throw new Error('ランキングデータの形式が不正です');
@@ -1605,7 +2511,7 @@ async function fetchAndDisplayRanking(type) {
             html += `
                 <tr class="${isCurrentPlayer ? 'current-player-row' : ''}">
                     <td>${safeRank}</td>
-                    <td>${safeNickname}</td>
+                    <td>${safeNickname}${isCurrentPlayer ? ' <span class="you-badge">あなた</span>' : ''}</td>
                     <td>${safeScore}</td>
                 </tr>
             `;
@@ -1617,6 +2523,8 @@ async function fetchAndDisplayRanking(type) {
         `;
 
         container.innerHTML = html;
+
+        await updateMyRank(type, requestId);
     } catch (error) {
         console.error('ランキング取得に失敗しました。', {
             name: error.name
@@ -1681,13 +2589,13 @@ function enforceMaxLength(elementId, maxLength) {
 
 if (btnLoginSubmit) {
     btnLoginSubmit.addEventListener('click', () => {
-        attemptLogin(inputNickname.value, inputPasscode.value);
+        runLogin();
     });
 }
 
 if (btnRegisterSubmit) {
     btnRegisterSubmit.addEventListener('click', () => {
-        attemptRegister(inputNickname.value, inputPasscode.value);
+        runRegister();
     });
 }
 
@@ -1701,10 +2609,7 @@ if (inputPasscode) {
             ) {
                 event.preventDefault();
 
-                attemptLogin(
-                    inputNickname.value,
-                    inputPasscode.value
-                );
+                runLogin();
             }
         }
     );
@@ -1717,7 +2622,7 @@ if (btnGuestPlay) {
             btnGuestPlay.disabled = true;
 
             try {
-                await fetch(
+                await fetchWithRetry(
                     `${API_BASE_URL}/player/logout`,
                     {
                         method: 'POST',
@@ -1753,7 +2658,7 @@ if (btnGuestPlay) {
 
                 btnGuestPlay.disabled = false;
 
-                alert(
+                showToast(
                     'ゲストとしてゲームを開始します。' +
                     'スコアはランキングに保存されません。'
                 );
@@ -1774,7 +2679,7 @@ if (logoutButton) {
             logoutButton.disabled = true;
 
             try {
-                await fetch(
+                await fetchWithRetry(
                     `${API_BASE_URL}/player/logout`,
                     {
                         method: 'POST',
@@ -1825,7 +2730,7 @@ if (btnPuzzleListBack) {
 
 document.getElementById('btn-create-mode').addEventListener('click', () => {
     if (!isLoggedIn()) {
-        alert('問題制作モードを利用するには、ログインしてください。');
+        showToast('問題制作モードを利用するには、ログインしてください。');
         return;
     }
 
