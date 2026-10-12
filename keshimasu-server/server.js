@@ -601,6 +601,7 @@ app.get('/api', (req, res) => {
             'GET /api/puzzles/:mode',
             'GET /api/words/:mode',
             'GET /api/rankings/:type',
+            'GET /api/rankings/:type/me',
             'POST /api/player/register',
             'POST /api/player/login',
             'POST /api/player/logout',
@@ -1249,6 +1250,12 @@ app.get('/api/rankings/:type', async (req, res) => {
     code: error.code
 });
 
+        return res.status(500).json({
+            message: 'ランキングの取得に失敗しました。'
+        });
+    }
+});
+
 // ------------------------------
 // GET /api/rankings/:type/me
 // ログイン中プレイヤーの順位（上位100位に入っていなくても取得できる）
@@ -1310,12 +1317,6 @@ app.get('/api/rankings/:type/me', requireAuth, async (req, res) => {
 
         return res.status(500).json({
             message: '順位の取得中にエラーが発生しました。'
-        });
-    }
-});
-
-        return res.status(500).json({
-            message: 'ランキングの取得に失敗しました。'
         });
     }
 });

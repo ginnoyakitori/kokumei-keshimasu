@@ -761,10 +761,12 @@ let tutorialScheduled = false;
 
 const TUTORIAL_STEPS = [
     {
-        title: '文字をつなげて選ぶ',
+        title: '文字をなぞって選ぶ',
         message:
-            '盤面の文字を、縦か横に一直線になるように順番に選びます。\n' +
-            '例：「ア」「メ」「リ」「カ」と選ぶと「アメリカ」になります。'
+            '盤面の文字を、縦か横に一直線になるように選びます。\n' +
+            '最初の文字から最後の文字まで、指でなぞるだけでOK。\n' +
+            '例：「ア」から「カ」までなぞると「アメリカ」になります。\n' +
+            '1つずつタップして選ぶこともできます。'
     },
     {
         title: 'ワードになったら消す',
@@ -1674,7 +1676,8 @@ function renderBoard(visibleRows) {
                     `${char}、${r - startRow + 1}行目${c + 1}列目`
                 );
                 cell.setAttribute('aria-pressed', order > -1 ? 'true' : 'false');
-                cell.addEventListener('click', handleCellClick);
+                // タップ・ドラッグは盤面全体のポインター処理で扱う（下の「ドラッグ選択」を参照）。
+                // キーボード操作の click も、盤面側で 1 つにまとめて受け取る。
             }
 
             cell.dataset.r = r;
@@ -1711,7 +1714,7 @@ function updateSelectedWordDisplay() {
     if (!element) return;
 
     if (selectedCells.length === 0) {
-        element.textContent = '選択中: なし';
+        element.textContent = '選択中: なし（指でなぞって選べます）';
         return;
     }
 
@@ -2066,10 +2069,12 @@ function applyGravity() {
     boardData = dropBoardLetters(boardData);
 }
 
-function handleCellClick(event) {
-    const r = parseInt(event.target.dataset.r);
-    const c = parseInt(event.target.dataset.c);
-
+// マスを1回タップ（またはキーボードで決定）したときの処理。
+// ・何も選んでいなければ、そのマスから選び始める
+// ・隣り合うマスなら、同じ向きに1マスずつ伸ばす
+// ・いちばん最後に選んだマスをもう一度タップすると、そのマスだけ選択を外す
+// ・途中のマスをタップすると、そこまで選択を戻す
+function applyTap(r, c) {
     if (selectedCells.length === 0) {
         selectedCells.push([r, c]);
         eraseButton.disabled = false;
@@ -2084,7 +2089,12 @@ function handleCellClick(event) {
         );
 
         if (index > -1) {
-            selectedCells.splice(index + 1);
+            if (index === selectedCells.length - 1) {
+                // 最後に選んだマスをもう一度タップ → 1つ取り消す（1つだけなら選択解除）
+                selectedCells.pop();
+            } else {
+                selectedCells.splice(index + 1);
+            }
         } else if (isHorizontal || isVertical) {
             let shouldAdd = false;
 
@@ -2125,6 +2135,312 @@ function handleCellClick(event) {
     eraseButton.disabled = selectedCells.length < 2;
     renderBoard(5);
 }
+
+// ----------------------------------------------------
+// ドラッグ（なぞり）選択
+// ----------------------------------------------------
+// 盤面を指（マウス）で押して、そのままなぞって離すと、
+// 押したマスからなぞったマスまでの一直線（縦または横）をまとめて選択する。
+// ・斜めにずれても、動きの大きい方向（縦／横）にそろえて選ぶ
+// ・空きマスの手前までで止まる（空きマスをまたいで選ぶことはできない）
+// ・動かさずに離したときは、これまでどおりの「タップ」として扱う
+// ・押したマスまで戻ると、選択はそのマス1つに戻る（なぞり直せる）
+const dragState = {
+    active: false,
+    pointerId: null,
+    startCell: null,   // 押したマス [r, c]
+    startElement: null,
+    axis: null,        // 'h'（横）| 'v'（縦）| null
+    moved: false,      // 別のマスまでなぞったか
+    previousSelection: []
+};
+
+// ポインター操作の直後に届く click を、二重に処理しないための印
+let ignoreClickUntil = 0;
+
+function getBoardGeometry() {
+    const children = boardElement.children;
+
+    if (children.length === 0 || boardData.length === 0) return null;
+
+    const columns = boardData[0].length;
+    const rows = children.length / columns;
+    const first = children[0].getBoundingClientRect();
+    const last = children[children.length - 1].getBoundingClientRect();
+
+    return {
+        left: first.left,
+        top: first.top,
+        cellWidth: (last.right - first.left) / columns,
+        cellHeight: (last.bottom - first.top) / rows,
+        columns,
+        rows,
+        startRow: Number(children[0].dataset.r)
+    };
+}
+
+// 画面上の座標から、盤面のマス [r, c] を求める（盤面の外にいても、いちばん近いマスにする）
+function getCellAtPoint(x, y) {
+    const geometry = getBoardGeometry();
+
+    if (!geometry) return null;
+
+    const column = Math.min(
+        geometry.columns - 1,
+        Math.max(0, Math.floor((x - geometry.left) / geometry.cellWidth))
+    );
+
+    const row = Math.min(
+        geometry.rows - 1,
+        Math.max(0, Math.floor((y - geometry.top) / geometry.cellHeight))
+    );
+
+    return [geometry.startRow + row, column];
+}
+
+function isFilledCell(r, c) {
+    const children = boardElement.children;
+
+    if (children.length === 0) return false;
+
+    const startRow = Number(children[0].dataset.r);
+
+    return (
+        r >= startRow &&
+        r < boardData.length &&
+        c >= 0 &&
+        c < boardData[r].length &&
+        boardData[r][c] !== ''
+    );
+}
+
+// 起点 anchor から target までのなぞり結果を求める。
+// 戻り値: { cells: 選択するマスの配列（起点が先頭）, axis }
+function computeDragSelection(anchor, target, previousAxis) {
+    const [anchorR, anchorC] = anchor;
+    const deltaR = target[0] - anchorR;
+    const deltaC = target[1] - anchorC;
+
+    if (deltaR === 0 && deltaC === 0) {
+        return { cells: [[anchorR, anchorC]], axis: null };
+    }
+
+    let axis = previousAxis;
+
+    // 逆方向に大きくずれたときだけ、縦横を切り替える
+    if (axis === 'h' && Math.abs(deltaR) > Math.abs(deltaC) + 1) axis = 'v';
+    else if (axis === 'v' && Math.abs(deltaC) > Math.abs(deltaR) + 1) axis = 'h';
+
+    // 向きに沿った移動量がなくなったら、向きを決め直す
+    if (axis === 'h' && deltaC === 0) axis = null;
+    if (axis === 'v' && deltaR === 0) axis = null;
+
+    if (axis === null) {
+        if (Math.abs(deltaC) > Math.abs(deltaR)) axis = 'h';
+        else if (Math.abs(deltaR) > Math.abs(deltaC)) axis = 'v';
+        else return { cells: [[anchorR, anchorC]], axis: null }; // 真ん中の斜め: まだ決めない
+    }
+
+    const stepR = axis === 'v' ? Math.sign(deltaR) : 0;
+    const stepC = axis === 'h' ? Math.sign(deltaC) : 0;
+    const distance = axis === 'v' ? Math.abs(deltaR) : Math.abs(deltaC);
+
+    const cells = [[anchorR, anchorC]];
+    let r = anchorR;
+    let c = anchorC;
+
+    for (let i = 0; i < distance; i++) {
+        r += stepR;
+        c += stepC;
+
+        // 空きマス・盤面の外・見えていない段で止める
+        if (!isFilledCell(r, c)) break;
+
+        cells.push([r, c]);
+    }
+
+    return { cells, axis };
+}
+
+// 盤面を作り直さずに、選択の見た目だけを更新する（なぞっている最中に使う）
+function refreshSelectionView() {
+    boardElement.querySelectorAll('.cell').forEach(cell => {
+        const r = Number(cell.dataset.r);
+        const c = Number(cell.dataset.c);
+
+        const order = selectedCells.findIndex(
+            coord => coord[0] === r && coord[1] === c
+        );
+
+        cell.classList.toggle('selected', order > -1);
+
+        if (cell.tagName === 'BUTTON') {
+            cell.setAttribute('aria-pressed', order > -1 ? 'true' : 'false');
+        }
+
+        if (order > -1) {
+            cell.dataset.order = String(order + 1);
+        } else {
+            delete cell.dataset.order;
+        }
+    });
+
+    eraseButton.disabled = selectedCells.length < 2;
+    updateSelectedWordDisplay();
+}
+
+function clearPressingMark() {
+    if (dragState.startElement) {
+        dragState.startElement.classList.remove('pressing');
+    }
+}
+
+function resetDragState() {
+    clearPressingMark();
+    boardElement.classList.remove('dragging');
+
+    dragState.active = false;
+    dragState.pointerId = null;
+    dragState.startCell = null;
+    dragState.startElement = null;
+    dragState.axis = null;
+    dragState.moved = false;
+    dragState.previousSelection = [];
+}
+
+function handleBoardPointerDown(event) {
+    // 1本目の指（左ボタン）だけを扱う
+    if (dragState.active || !event.isPrimary) return;
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+
+    const element = event.target instanceof Element
+        ? event.target.closest('button.cell')
+        : null;
+
+    // 空きマスや枠線から始めたときは何もしない
+    if (!element || !boardElement.contains(element)) return;
+
+    dragState.active = true;
+    dragState.pointerId = event.pointerId;
+    dragState.startElement = element;
+    dragState.startCell = [Number(element.dataset.r), Number(element.dataset.c)];
+    dragState.axis = null;
+    dragState.moved = false;
+    dragState.previousSelection = selectedCells.map(coord => [...coord]);
+
+    // 盤面を作り直しても、指（マウス）の動きを受け取り続けられるようにする
+    try {
+        boardElement.setPointerCapture(event.pointerId);
+    } catch {
+        // 取得できなくても、タップとしては動作する
+    }
+
+    // 押した瞬間にも反応が分かるように、押したマスを色づける
+    element.classList.add('pressing');
+}
+
+function handleBoardPointerMove(event) {
+    if (!dragState.active || event.pointerId !== dragState.pointerId) return;
+
+    const target = getCellAtPoint(event.clientX, event.clientY);
+
+    if (!target) return;
+
+    const [startR, startC] = dragState.startCell;
+
+    // まだ押したマスの中にいる間は、タップかもしれないので何もしない
+    if (!dragState.moved && target[0] === startR && target[1] === startC) {
+        return;
+    }
+
+    if (!dragState.moved) {
+        dragState.moved = true;
+        boardElement.classList.add('dragging');
+        clearPressingMark();
+    }
+
+    const result = computeDragSelection(
+        dragState.startCell,
+        target,
+        dragState.axis
+    );
+
+    dragState.axis = result.axis;
+
+    const changed =
+        result.cells.length !== selectedCells.length ||
+        result.cells.some(
+            (coord, index) =>
+                coord[0] !== selectedCells[index]?.[0] ||
+                coord[1] !== selectedCells[index]?.[1]
+        );
+
+    if (changed) {
+        selectedCells = result.cells;
+        refreshSelectionView();
+    }
+}
+
+function handleBoardPointerUp(event) {
+    if (!dragState.active || event.pointerId !== dragState.pointerId) return;
+
+    const wasMoved = dragState.moved;
+    const [r, c] = dragState.startCell;
+
+    try {
+        boardElement.releasePointerCapture(event.pointerId);
+    } catch {
+        // すでに解放されていれば何もしない
+    }
+
+    resetDragState();
+
+    // この後に届く click は、ここで処理済みなので無視する
+    ignoreClickUntil = Date.now() + 400;
+
+    if (!wasMoved) {
+        // 動かさずに離した = タップ
+        applyTap(r, c);
+    }
+}
+
+function handleBoardPointerCancel(event) {
+    if (!dragState.active || event.pointerId !== dragState.pointerId) return;
+
+    // 画面のスクロールなどで中断されたときは、なぞる前の選択に戻す
+    const restore = dragState.previousSelection;
+    const wasMoved = dragState.moved;
+
+    resetDragState();
+
+    if (wasMoved) {
+        selectedCells = restore;
+        refreshSelectionView();
+    }
+}
+
+boardElement.addEventListener('pointerdown', handleBoardPointerDown);
+boardElement.addEventListener('pointermove', handleBoardPointerMove);
+boardElement.addEventListener('pointerup', handleBoardPointerUp);
+boardElement.addEventListener('pointercancel', handleBoardPointerCancel);
+
+// 長押しのメニューや文字選択で、なぞり操作が邪魔されないようにする
+boardElement.addEventListener('contextmenu', event => event.preventDefault());
+
+// キーボード（Enter / Space）やスクリーンリーダーからの決定。
+// マウス・タッチの click は、上のポインター処理で済んでいるので無視する。
+boardElement.addEventListener('click', (event) => {
+    // マウス・タッチ由来の click は detail が 1 以上。キーボード／支援技術の click は 0。
+    if (event.detail > 0 && Date.now() < ignoreClickUntil) return;
+
+    const element = event.target instanceof Element
+        ? event.target.closest('button.cell')
+        : null;
+
+    if (!element || !boardElement.contains(element)) return;
+
+    applyTap(Number(element.dataset.r), Number(element.dataset.c));
+});
 
 const undoButton = document.getElementById('undo-button');
 

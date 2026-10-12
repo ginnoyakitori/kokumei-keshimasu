@@ -1340,6 +1340,33 @@ details.game-rules[open] > summary {
     font-weight: bold;
 }
 
+/* ------------------------------ */
+/* ドラッグ（なぞり）選択 */
+/* ------------------------------ */
+/* 文字のあるマスの上では、指でなぞってもページがスクロールしないようにする。
+   空きマス・枠・盤面の外から始めたスワイプは、これまでどおりスクロールできる。 */
+button.cell {
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+#board {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+
+/* 押した瞬間のマス（なぞり始める前でも反応が分かる） */
+.cell.pressing {
+    background-color: var(--color-accent);
+    color: var(--color-primary);
+}
+
+#board.dragging,
+#board.dragging .cell {
+    cursor: grabbing;
+}
+
 /* 動きを抑える設定に対応 */
 @media (prefers-reduced-motion: reduce) {
     *,
