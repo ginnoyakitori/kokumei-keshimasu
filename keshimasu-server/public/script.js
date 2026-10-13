@@ -83,6 +83,411 @@ const wordListContent = document.getElementById('word-list-content');
 const wordListTabs = document.getElementById('word-list-tabs');
 
 // ----------------------------------------------------
+// 演出まわり: 効果音・振動・ミュート・アニメーション・紙吹雪
+// ----------------------------------------------------
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+function prefersReducedMotion() {
+    return Boolean(
+        window.matchMedia &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    );
+}
+
+// 効果音は音声ファイルを使わず、Web Audio API でその場で合成する（読み込み不要・軽量）。
+// ミュートは効果音と振動の両方に効き、設定はこの端末に保存される。
+const FX = (() => {
+    const MUTE_KEY = 'keshimasu_muted_v1';
+    let ctx = null;
+
+    let muted = false;
+
+    try {
+        muted = localStorage.getItem(MUTE_KEY) === '1';
+    } catch {
+        muted = false;
+    }
+
+    function getContext() {
+        if (muted) return null;
+
+        if (!ctx) {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+
+            if (!AudioContextClass) return null;
+
+            try {
+                ctx = new AudioContextClass();
+            } catch {
+                return null;
+            }
+        }
+
+        if (ctx.state === 'suspended') {
+            ctx.resume().catch(() => { });
+        }
+
+        return ctx;
+    }
+
+    // 1つの音（周波数 freq から to へ滑らせる）
+    function tone({ freq, to, type = 'sine', start = 0, dur = 0.12, gain = 0.12 }) {
+        const audio = getContext();
+
+        if (!audio) return;
+
+        const t0 = audio.currentTime + start;
+        const osc = audio.createOscillator();
+        const amp = audio.createGain();
+
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, t0);
+
+        if (to) {
+            osc.frequency.exponentialRampToValueAtTime(to, t0 + dur);
+        }
+
+        amp.gain.setValueAtTime(0.0001, t0);
+        amp.gain.exponentialRampToValueAtTime(gain, t0 + 0.01);
+        amp.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+
+        osc.connect(amp).connect(audio.destination);
+        osc.start(t0);
+        osc.stop(t0 + dur + 0.02);
+    }
+
+    // 「パァン」用の短いノイズ
+    function noise({ start = 0, dur = 0.12, gain = 0.1, highpass = 1800 }) {
+        const audio = getContext();
+
+        if (!audio) return;
+
+        const t0 = audio.currentTime + start;
+        const length = Math.max(1, Math.floor(audio.sampleRate * dur));
+        const buffer = audio.createBuffer(1, length, audio.sampleRate);
+        const data = buffer.getChannelData(0);
+
+        for (let i = 0; i < length; i++) {
+            data[i] = Math.random() * 2 - 1;
+        }
+
+        const source = audio.createBufferSource();
+        const filter = audio.createBiquadFilter();
+        const amp = audio.createGain();
+
+        source.buffer = buffer;
+        filter.type = 'highpass';
+        filter.frequency.value = highpass;
+
+        amp.gain.setValueAtTime(gain, t0);
+        amp.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+
+        source.connect(filter).connect(amp).connect(audio.destination);
+        source.start(t0);
+    }
+
+    function vibrate(pattern) {
+        if (muted) return;
+
+        try {
+            if (navigator.vibrate) navigator.vibrate(pattern);
+        } catch {
+            // 振動に対応していない端末では何もしない
+        }
+    }
+
+    return {
+        // 最初のタップで音声を使える状態にする（ブラウザの自動再生制限への対応）
+        unlock() {
+            getContext();
+        },
+
+        isMuted() {
+            return muted;
+        },
+
+        setMuted(value) {
+            muted = Boolean(value);
+
+            try {
+                localStorage.setItem(MUTE_KEY, muted ? '1' : '0');
+            } catch {
+                // 保存できなくても、そのセッションでは有効
+            }
+        },
+
+        // 文字を選んだ「ポッ」（長くなるほど少しずつ高くなる）
+        tick(count = 1) {
+            const freq = 480 + Math.min(count, 10) * 45;
+
+            tone({ freq, to: freq * 1.12, type: 'triangle', dur: 0.07, gain: 0.07 });
+            vibrate(8);
+        },
+
+        // ワードが成立した「ピロリン」
+        valid() {
+            tone({ freq: 784, type: 'sine', dur: 0.1, gain: 0.1 });
+            tone({ freq: 1175, type: 'sine', start: 0.08, dur: 0.16, gain: 0.1 });
+            vibrate(14);
+        },
+
+        // 消去の「パァン」
+        erase(count = 2) {
+            const rise = 600 + Math.min(count, 8) * 60;
+
+            noise({ dur: 0.13, gain: 0.09 });
+            tone({ freq: 420, to: rise * 2, type: 'triangle', dur: 0.16, gain: 0.14 });
+            tone({ freq: rise, to: rise * 1.5, type: 'sine', start: 0.05, dur: 0.14, gain: 0.08 });
+            vibrate(22);
+        },
+
+        // 不正解の低い音
+        error() {
+            tone({ freq: 190, to: 110, type: 'sawtooth', dur: 0.22, gain: 0.08 });
+            tone({ freq: 150, to: 90, type: 'square', start: 0.09, dur: 0.2, gain: 0.05 });
+            vibrate([30, 40, 30]);
+        },
+
+        // 1手戻す・リセットの小さな音
+        undo() {
+            tone({ freq: 620, to: 380, type: 'triangle', dur: 0.12, gain: 0.07 });
+            vibrate(10);
+        },
+
+        // クリアのファンファーレ
+        clear() {
+            [523, 659, 784, 1047].forEach((freq, index) => {
+                tone({
+                    freq,
+                    type: 'triangle',
+                    start: index * 0.11,
+                    dur: index === 3 ? 0.5 : 0.14,
+                    gain: 0.12
+                });
+            });
+
+            tone({ freq: 1568, type: 'sine', start: 0.44, dur: 0.45, gain: 0.06 });
+            vibrate([40, 50, 40, 50, 120]);
+        }
+    };
+})();
+
+document.addEventListener('pointerdown', () => FX.unlock(), { once: true });
+
+// 画面右上の「音のオン/オフ」ボタン
+function createSoundToggle() {
+    const button = document.createElement('button');
+
+    button.type = 'button';
+    button.id = 'sound-toggle';
+
+    const render = () => {
+        const muted = FX.isMuted();
+
+        button.textContent = muted ? '🔇' : '🔊';
+        button.setAttribute('aria-pressed', muted ? 'true' : 'false');
+        button.setAttribute(
+            'aria-label',
+            muted ? '効果音と振動: オフ（押すとオン）' : '効果音と振動: オン（押すとオフ）'
+        );
+        button.title = muted ? '効果音・振動: オフ' : '効果音・振動: オン';
+    };
+
+    button.addEventListener('click', () => {
+        FX.setMuted(!FX.isMuted());
+        render();
+
+        if (!FX.isMuted()) {
+            FX.tick(3);
+        }
+    });
+
+    render();
+    document.body.appendChild(button);
+}
+
+createSoundToggle();
+
+// ---------- 消去・落下アニメーション ----------
+let isAnimating = false;       // 演出中は盤面を操作できない
+let pendingFall = null;        // 次の renderBoard で落下させるマス（"行,列" → 落ちる段数）
+let pendingFallDurationMs = 0;
+
+const ERASE_ANIMATION_MS = 220;
+const ERASE_STAGGER_MS = 22;
+
+function fallDurationMs(rows) {
+    return Math.min(380, 140 + 55 * rows);
+}
+
+// 消したあとに、各文字が何段落ちるかを求める（空きマスの数だけ落ちる）
+// 戻り値のキーは「落ちたあとの位置」
+function computeFallMap(board) {
+    const map = new Map();
+    const rowCount = board.length;
+    const columnCount = rowCount > 0 ? board[0].length : 0;
+
+    pendingFallDurationMs = 0;
+
+    for (let c = 0; c < columnCount; c++) {
+        let emptyBelow = 0;
+
+        for (let r = rowCount - 1; r >= 0; r--) {
+            if (board[r][c] === '') {
+                emptyBelow++;
+            } else if (emptyBelow > 0) {
+                map.set(`${r + emptyBelow},${c}`, emptyBelow);
+                pendingFallDurationMs = Math.max(
+                    pendingFallDurationMs,
+                    fallDurationMs(emptyBelow)
+                );
+            }
+        }
+    }
+
+    return map;
+}
+
+function getBoardCell(r, c) {
+    return boardElement.querySelector(`button.cell[data-r="${r}"][data-c="${c}"]`);
+}
+
+// 選んだ文字を、端から順に光らせて縮ませる
+async function playEraseAnimation(cells) {
+    if (prefersReducedMotion()) return;
+
+    cells.forEach(([r, c], index) => {
+        const element = getBoardCell(r, c);
+
+        if (!element) return;
+
+        element.style.animationDelay = `${Math.min(index * ERASE_STAGGER_MS, 200)}ms`;
+        element.classList.add('erasing');
+    });
+
+    await sleep(
+        ERASE_ANIMATION_MS + Math.min((cells.length - 1) * ERASE_STAGGER_MS, 200)
+    );
+}
+
+async function waitForFall(durationMs) {
+    if (durationMs > 0 && !prefersReducedMotion()) {
+        await sleep(durationMs);
+    }
+}
+
+// 不正解のとき、選んだ文字を左右に揺らして赤くする
+function shakeSelectedCells() {
+    const elements = [...boardElement.querySelectorAll('.cell.selected')];
+
+    elements.forEach(element => {
+        element.classList.remove('shake');
+        void element.offsetWidth; // 連続で失敗してもアニメーションをやり直す
+        element.classList.add('shake');
+    });
+
+    setTimeout(() => {
+        elements.forEach(element => element.classList.remove('shake'));
+    }, 420);
+}
+
+// ---------- 紙吹雪 ----------
+function launchConfetti(durationMs = 2800) {
+    if (prefersReducedMotion()) return;
+
+    const canvas = document.createElement('canvas');
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    canvas.className = 'confetti-canvas';
+    canvas.setAttribute('aria-hidden', 'true');
+    canvas.width = Math.floor(width * dpr);
+    canvas.height = Math.floor(height * dpr);
+
+    const context = canvas.getContext('2d');
+
+    if (!context) return;
+
+    context.scale(dpr, dpr);
+    document.body.appendChild(canvas);
+
+    const colors = ['#FFD700', '#ff6b6b', '#6ddf6d', '#4dabf7', '#ffffff', '#f783ac'];
+    const particles = [];
+
+    // 画面の中ほどから打ち上がる紙吹雪
+    for (let i = 0; i < 90; i++) {
+        const angle = -Math.PI * (0.1 + Math.random() * 0.8);
+        const speed = 7 + Math.random() * 9;
+
+        particles.push({
+            x: width / 2,
+            y: height * 0.45,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            gravity: 0.32,
+            drag: 0.985
+        });
+    }
+
+    // 上からひらひら降ってくる紙吹雪
+    for (let i = 0; i < 70; i++) {
+        particles.push({
+            x: Math.random() * width,
+            y: -20 - Math.random() * height * 0.5,
+            vx: (Math.random() - 0.5) * 2,
+            vy: 2 + Math.random() * 3,
+            gravity: 0.03,
+            drag: 0.995
+        });
+    }
+
+    particles.forEach(p => {
+        p.w = 6 + Math.random() * 5;
+        p.h = 9 + Math.random() * 6;
+        p.angle = Math.random() * Math.PI * 2;
+        p.spin = (Math.random() - 0.5) * 0.35;
+        p.sway = Math.random() * Math.PI * 2;
+        p.color = colors[Math.floor(Math.random() * colors.length)];
+    });
+
+    const startTime = performance.now();
+
+    function frame(now) {
+        const elapsed = now - startTime;
+        const fade = elapsed > durationMs - 600
+            ? Math.max(0, (durationMs - elapsed) / 600)
+            : 1;
+
+        context.clearRect(0, 0, width, height);
+
+        particles.forEach(p => {
+            p.vx *= p.drag;
+            p.vy = p.vy * p.drag + p.gravity;
+            p.x += p.vx + Math.sin(p.sway + elapsed / 250) * 0.6;
+            p.y += p.vy;
+            p.angle += p.spin;
+
+            context.save();
+            context.globalAlpha = fade;
+            context.translate(p.x, p.y);
+            context.rotate(p.angle);
+            context.fillStyle = p.color;
+            context.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+            context.restore();
+        });
+
+        if (elapsed < durationMs) {
+            requestAnimationFrame(frame);
+        } else {
+            canvas.remove();
+        }
+    }
+
+    requestAnimationFrame(frame);
+}
+
+// ----------------------------------------------------
 // ユーティリティ関数
 // ----------------------------------------------------
 
@@ -276,7 +681,7 @@ function showToast(message, type) {
 // ---------- モーダル ----------
 // content: 要素、または close を受け取って要素を返す関数
 // 戻り値: 押されたボタンの value（Escキーなら cancelValue）
-function openModal({ title, message, content, buttons = [], cancelValue = null }) {
+function openModal({ title, message, content, buttons = [], cancelValue = null, className = '' }) {
     return new Promise(resolve => {
         const previouslyFocused = document.activeElement;
 
@@ -284,7 +689,7 @@ function openModal({ title, message, content, buttons = [], cancelValue = null }
         overlay.className = 'modal-overlay';
 
         const dialog = document.createElement('div');
-        dialog.className = 'modal';
+        dialog.className = className ? `modal ${className}` : 'modal';
         dialog.setAttribute('role', 'dialog');
         dialog.setAttribute('aria-modal', 'true');
 
@@ -499,7 +904,32 @@ function findNextPuzzleId(mode, currentId) {
 }
 
 // 戻り値: 'next' | 'list' | 'home'
-function showClearResult(modeName, clearedCount, hasNext, shareText) {
+// 消したワードを順番に並べる（1つずつ「ポン」と現れる）
+function buildClearWords(words) {
+    const wrapper = document.createElement('div');
+
+    const caption = document.createElement('p');
+    caption.className = 'clear-words-caption';
+    caption.textContent = `消したワード（${words.length}個）`;
+    wrapper.appendChild(caption);
+
+    const list = document.createElement('div');
+    list.className = 'clear-words';
+
+    words.forEach((word, index) => {
+        const chip = document.createElement('span');
+        chip.className = 'clear-word';
+        chip.style.setProperty('--i', String(index));
+        chip.textContent = word;
+        list.appendChild(chip);
+    });
+
+    wrapper.appendChild(list);
+
+    return wrapper;
+}
+
+function showClearResult(modeName, clearedCount, hasNext, shareText, words = []) {
     const buttons = [];
 
     if (hasNext) {
@@ -525,6 +955,8 @@ function showClearResult(modeName, clearedCount, hasNext, shareText) {
             `全ての文字を消去しました！\n` +
             `あなたの${modeName}クリア数は${clearedCount}問になりました。` +
             (hasNext ? '' : '\n挑戦できる未クリアの問題はもうありません。'),
+        content: words.length > 0 ? () => buildClearWords(words) : null,
+        className: 'clear-modal',
         buttons,
         cancelValue: 'home'
     });
@@ -547,9 +979,13 @@ function resetMoveHistory() {
 }
 
 function undoLastMove() {
+    if (isAnimating) return;
+
     const last = moveHistory.pop();
 
     if (!last) return;
+
+    FX.undo();
 
     boardData = last.board;
     usedWords = last.usedWords;
@@ -1684,6 +2120,17 @@ function renderBoard(visibleRows) {
             cell.dataset.c = c;
             cell.textContent = char;
 
+            // 消したあとに落ちてくる文字は、落ちる段数に応じて落下アニメーションを付ける
+            const fallRows = char !== '' && pendingFall
+                ? pendingFall.get(`${r},${c}`)
+                : undefined;
+
+            if (fallRows) {
+                cell.classList.add('falling');
+                cell.style.setProperty('--fall', String(fallRows));
+                cell.style.setProperty('--fall-dur', `${fallDurationMs(fallRows)}ms`);
+            }
+
             if (order > -1) {
                 cell.classList.add('selected');
                 // 色だけに頼らず、選んだ順番を数字で表示する
@@ -1693,6 +2140,14 @@ function renderBoard(visibleRows) {
             boardElement.appendChild(cell);
         }
     }
+
+    // 落下中は盤面の外にはみ出した部分を隠す
+    boardElement.classList.toggle(
+        'animating',
+        Boolean(pendingFall && pendingFall.size > 0) && !prefersReducedMotion()
+    );
+
+    pendingFall = null;
 
     if (hadFocus) {
         const next = boardElement.querySelector(
@@ -1715,6 +2170,9 @@ function updateSelectedWordDisplay() {
 
     if (selectedCells.length === 0) {
         element.textContent = '選択中: なし（指でなぞって選べます）';
+        element.dataset.state = '';
+        applySelectionState('');
+        playSelectionFeedback(0, '');
         return;
     }
 
@@ -1724,8 +2182,90 @@ function updateSelectedWordDisplay() {
         isHorizontal ? a[1] - b[1] : a[0] - b[0]
     );
 
-    element.textContent =
-        `選択中: ${sorted.map(([r, c]) => boardData[r][c]).join('')}`;
+    const chars = sorted.map(([r, c]) => boardData[r][c]);
+    const status = getSelectionStatus(chars);
+
+    let suffix = '';
+
+    if (status === 'valid') {
+        suffix = '　✓ 消せます！';
+    } else if (status === 'used') {
+        suffix = '　（使用済みのワード）';
+    }
+
+    element.textContent = `選択中: ${chars.join('')}${suffix}`;
+    element.dataset.state = status;
+
+    applySelectionState(status);
+    playSelectionFeedback(selectedCells.length, status);
+}
+
+// 選んでいる文字列の状態を調べる
+//   'valid' … 辞書にあり、まだ使っていない（消せる）
+//   'used'  … 辞書にあるが、使用済み
+//   ''      … ワードになっていない（まだ作っている途中を含む）
+// 「F」（ワイルドカード）を含むときは、当てはまる未使用のワードが1つでもあれば valid
+function getSelectionStatus(chars) {
+    if (chars.length < 2 || !currentDictionary || currentDictionary.size === 0) {
+        return '';
+    }
+
+    const word = chars.join('');
+
+    if (!chars.includes('F')) {
+        if (!currentDictionary.has(word)) return '';
+
+        return usedWords.includes(word) ? 'used' : 'valid';
+    }
+
+    let foundUsed = false;
+
+    for (const candidate of currentDictionary) {
+        if (candidate.length !== chars.length) continue;
+
+        let matches = true;
+
+        for (let i = 0; i < chars.length; i++) {
+            if (chars[i] !== 'F' && chars[i] !== candidate[i]) {
+                matches = false;
+                break;
+            }
+        }
+
+        if (!matches) continue;
+
+        if (!usedWords.includes(candidate)) return 'valid';
+
+        foundUsed = true;
+    }
+
+    return foundUsed ? 'used' : '';
+}
+
+// 成立しているときは、選んだマスを緑にして「消去する」ボタンを光らせる
+function applySelectionState(status) {
+    const isValid = status === 'valid';
+
+    boardElement.querySelectorAll('.cell').forEach(cell => {
+        cell.classList.toggle('valid', isValid && cell.classList.contains('selected'));
+    });
+
+    eraseButton.classList.toggle('ready', isValid);
+}
+
+// 選択に合わせた「ポッ」「ピロリン」（同じ状態での再描画では鳴らさない）
+let lastFeedbackCount = 0;
+let lastFeedbackStatus = '';
+
+function playSelectionFeedback(count, status) {
+    if (status === 'valid' && lastFeedbackStatus !== 'valid') {
+        FX.valid();
+    } else if (count > lastFeedbackCount) {
+        FX.tick(count);
+    }
+
+    lastFeedbackCount = count;
+    lastFeedbackStatus = status;
 }
 
 // 矢印キーでセル間を移動、Escで選択解除
@@ -1965,6 +2505,10 @@ async function checkGameStatus() {
     const mode = currentMode;
     const modeName = getShortModeName(mode);
 
+    // 通信の待ち時間より先に、お祝いの演出を出す
+    FX.clear();
+    launchConfetti();
+
     if (!isCreationPlay) {
         // 盤面の内容ではなく、プレイ開始時に保持した問題IDでクリアを記録する
         if (currentPuzzleId) {
@@ -1978,6 +2522,7 @@ async function checkGameStatus() {
         }
 
         const clearedPuzzleId = currentPuzzleId;
+        const clearedWords = [...usedWords];
         const latestClearedCount = playerStats[`${mode}_clears`] || 0;
 
         const problemLabel = document
@@ -1997,7 +2542,8 @@ async function checkGameStatus() {
             modeName,
             latestClearedCount,
             nextPuzzleId !== null,
-            shareText
+            shareText,
+            clearedWords
         );
 
         if (choice === 'next' && nextPuzzleId !== null) {
@@ -2310,7 +2856,7 @@ function resetDragState() {
 
 function handleBoardPointerDown(event) {
     // 1本目の指（左ボタン）だけを扱う
-    if (dragState.active || !event.isPrimary) return;
+    if (isAnimating || dragState.active || !event.isPrimary) return;
     if (event.pointerType === 'mouse' && event.button !== 0) return;
 
     const element = event.target instanceof Element
@@ -2433,6 +2979,8 @@ boardElement.addEventListener('click', (event) => {
     // マウス・タッチ由来の click は detail が 1 以上。キーボード／支援技術の click は 0。
     if (event.detail > 0 && Date.now() < ignoreClickUntil) return;
 
+    if (isAnimating) return;
+
     const element = event.target instanceof Element
         ? event.target.closest('button.cell')
         : null;
@@ -2501,45 +3049,65 @@ eraseButton.addEventListener('click', async () => {
     }
 
     if (!currentDictionary.has(finalWord)) {
+        FX.error();
+        shakeSelectedCells();
         showToast(`「${finalWord}」は有効な${modeLabel}ではありません。`);
         return;
     }
 
     if (usedWords.includes(finalWord)) {
+        FX.error();
+        shakeSelectedCells();
         showToast(`「${finalWord}」は既に使用済みです。`);
         return;
     }
 
     // 1手戻す用に、消去前の盤面と使用済みワードを保存する
-
     moveHistory.push({
-
         board: JSON.parse(JSON.stringify(boardData)),
-
         usedWords: [...usedWords]
-
     });
 
-
-    selectedCells.forEach(([r, c]) => {
-        boardData[r][c] = '';
-    });
-
-    usedWords.push(finalWord);
-
-    applyGravity();
-
-    selectedCells = [];
+    // 演出中は盤面の操作・戻す・リセットを受け付けない
+    isAnimating = true;
     eraseButton.disabled = true;
+    eraseButton.classList.remove('ready');
 
-    renderBoard(5);
-    updateStatusDisplay();
+    try {
+        // 1) 消える演出（光ってスケールダウン）
+        FX.erase(sortedSelectedCells.length);
+        await playEraseAnimation(sortedSelectedCells);
 
-    updateUndoButton();
+        // 2) 盤面を更新（落下する距離を先に求めておく）
+        sortedSelectedCells.forEach(([r, c]) => {
+            boardData[r][c] = '';
+        });
+
+        usedWords.push(finalWord);
+
+        pendingFall = computeFallMap(boardData);
+        applyGravity();
+
+        selectedCells = [];
+
+        renderBoard(5);
+        updateStatusDisplay();
+        updateUndoButton();
+
+        // 3) 落下の演出が終わるまで待つ
+        await waitForFall(pendingFallDurationMs);
+    } finally {
+        boardElement.classList.remove('animating');
+        isAnimating = false;
+        updateUndoButton();
+    }
+
     await checkGameStatus();
 });
 
 resetBtn.addEventListener('click', () => {
+    if (isAnimating) return;
+
     if (isCreationPlay) {
         showScreen('create');
         renderCreateBoard();
