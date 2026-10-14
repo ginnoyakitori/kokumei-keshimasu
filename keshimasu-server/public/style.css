@@ -1611,3 +1611,32 @@ button.cell {
         opacity: 0;
     }
 }
+
+/* ===== ラウンド2: 問題一覧フィルタ / 豆知識 / ドラッグ案内 / 待ち時間デモ ===== */
+#puzzle-filter { display: flex; gap: 8px; justify-content: center; margin: 8px 0; }
+#puzzle-filter button { padding: 8px 14px; border-radius: 999px; border: 1px solid #bbb; background: #fff; color: #333; cursor: pointer; font-size: 0.95rem; }
+#puzzle-filter button.active { background: #2e7d32; border-color: #2e7d32; color: #fff; font-weight: bold; }
+#puzzle-progress { text-align: center; margin: 4px 0 10px; font-weight: bold; }
+
+.next-unsolved-btn { display: block; margin: 6px auto 0; padding: 6px 12px; border-radius: 999px; border: 1px solid #2e7d32; background: #fff; color: #2e7d32; cursor: pointer; font-size: 0.9rem; }
+.next-unsolved-btn:hover { background: #e8f5e9; }
+
+.clear-word.has-fact { cursor: pointer; border: 1px dashed #2e7d32; font: inherit; }
+.clear-word.has-fact.active { background: #2e7d32; color: #fff; }
+.clear-words-hint { font-size: 0.85rem; opacity: 0.75; margin: 6px 0 0; }
+.clear-word-detail { margin: 8px 0 0; padding: 8px 10px; border-radius: 8px; background: #f1f8e9; color: #1b3a1d; text-align: left; line-height: 1.5; }
+
+.drag-hint-finger { position: fixed; z-index: 2000; font-size: 2.2rem; pointer-events: none; transform: translate(-50%, -30%); filter: drop-shadow(0 2px 3px rgba(0,0,0,.35)); }
+.drag-hint-bubble { position: fixed; z-index: 2000; transform: translate(-50%, -100%); padding: 6px 12px; border-radius: 999px; background: #222; color: #fff; font-size: 0.9rem; white-space: nowrap; pointer-events: none; }
+.cell.hint-cell { outline: 3px solid #ffb300; outline-offset: -3px; }
+
+#demo-screen { text-align: center; }
+#demo-board { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; max-width: 340px; margin: 12px auto; touch-action: none; user-select: none; -webkit-user-select: none; }
+#demo-board .cell { aspect-ratio: 1; font-size: 1.6rem; }
+#demo-word { min-height: 2rem; font-size: 1.4rem; font-weight: bold; }
+#demo-word[data-state="valid"] { color: #2e7d32; }
+.demo-help { font-size: 0.9rem; opacity: 0.8; }
+.demo-actions { display: flex; gap: 10px; justify-content: center; margin: 10px 0; }
+#demo-continue.ready { animation: demo-pulse 1.2s ease-in-out infinite; }
+@keyframes demo-pulse { 50% { transform: scale(1.04); } }
+@media (prefers-reduced-motion: reduce) { #demo-continue.ready { animation: none; } }

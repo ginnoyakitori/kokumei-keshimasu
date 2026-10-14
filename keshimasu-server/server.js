@@ -457,7 +457,8 @@ async function warnIfSchemaMissing() {
             SELECT
                 to_regclass('public.players') AS players,
                 to_regclass('public.puzzles') AS puzzles,
-                to_regclass('public.player_sessions') AS player_sessions;
+                to_regclass('public.player_sessions') AS player_sessions,
+                to_regclass('public.clear_events') AS clear_events;
         `);
 
         const missing = Object.entries(result.rows[0])
@@ -602,6 +603,7 @@ app.get('/api', (req, res) => {
             'GET /api/words/:mode',
             'GET /api/rankings/:type',
             'GET /api/rankings/:type/me',
+            'GET /api/facts/:mode',
             'POST /api/player/register',
             'POST /api/player/login',
             'POST /api/player/logout',
@@ -649,6 +651,83 @@ app.get('/api/words/:mode', (req, res) => {
     res.set('Cache-Control', 'public, max-age=3600');
 
     return res.json(WORD_LISTS[mode]);
+});
+
+// ------------------------------
+// ワードの豆知識（クリア画面で表示する）
+// GET /api/facts/country   … 国名 → 「首都: ○○。一言」
+// GET /api/facts/capital   … 首都名 → 「○○の首都。」
+// GET /api/facts/pokemon   … ポケモン名 → 好きな文章（data/word_facts.json の "pokemon"）
+//
+// データは data/word_facts.json で管理する。ファイルが無い・壊れている場合は
+// 空のデータとして扱い、ゲームの進行には影響しない。
+// ------------------------------
+function buildWordFacts() {
+    const facts = { country: {}, capital: {}, pokemon: {} };
+
+    let source = {};
+
+    try {
+        source = require('./data/word_facts.json');
+    } catch (error) {
+        console.warn(
+            '⚠️ data/word_facts.json を読み込めませんでした。豆知識は表示されません。',
+            { name: error.name, code: error.code }
+        );
+
+        return facts;
+    }
+
+    const countries = source && typeof source.country === 'object' && source.country
+        ? source.country
+        : {};
+
+    for (const [countryName, entry] of Object.entries(countries)) {
+        if (!entry || typeof entry.capital !== 'string' || !entry.capital) {
+            continue;
+        }
+
+        const note = typeof entry.note === 'string' ? entry.note : '';
+        const capitalNote =
+            typeof entry.capital_note === 'string' ? entry.capital_note : '';
+
+        facts.country[countryName] =
+            `首都: ${entry.capital}。${note}`.trim();
+
+        // 同じ首都名を持つ国が複数あっても、最初の1件を優先する
+        if (!facts.capital[entry.capital]) {
+            facts.capital[entry.capital] =
+                `${countryName}の首都。${capitalNote}`.trim();
+        }
+    }
+
+    const pokemon = source && typeof source.pokemon === 'object' && source.pokemon
+        ? source.pokemon
+        : {};
+
+    for (const [name, text] of Object.entries(pokemon)) {
+        if (typeof text === 'string' && text) {
+            facts.pokemon[name] = text;
+        }
+    }
+
+    return facts;
+}
+
+const WORD_FACTS = buildWordFacts();
+
+app.get('/api/facts/:mode', (req, res) => {
+    const { mode } = req.params;
+
+    if (!Object.prototype.hasOwnProperty.call(WORD_FACTS, mode)) {
+        return res.status(400).json({
+            message: '無効なモードです。'
+        });
+    }
+
+    res.set('Cache-Control', 'public, max-age=3600');
+
+    return res.json(WORD_FACTS[mode]);
 });
 
 // ------------------------------
@@ -1160,6 +1239,31 @@ app.post(
                 ]
             );
 
+            // 「今週のランキング」用に、初めてクリアした日時を記録する。
+            // 記録に失敗してもクリア自体は成功させたいので、SAVEPOINT で切り離しておく
+            // （テーブル未作成などでエラーになっても、上の更新を巻き込んで失敗させない）。
+            try {
+                await client.query('SAVEPOINT record_clear_event');
+
+                await client.query(
+                    `
+                    INSERT INTO clear_events (player_id, mode, puzzle_id)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (player_id, mode, puzzle_id) DO NOTHING;
+                    `,
+                    [playerId, mode, numericPuzzleId]
+                );
+
+                await client.query('RELEASE SAVEPOINT record_clear_event');
+            } catch (eventError) {
+                await client.query('ROLLBACK TO SAVEPOINT record_clear_event');
+
+                console.error('クリア履歴の記録に失敗しました。', {
+                    name: eventError.name,
+                    code: eventError.code
+                });
+            }
+
             await client.query('COMMIT');
 
             // クリア者数が変わるので、問題一覧のキャッシュを破棄する
@@ -1206,13 +1310,110 @@ app.post(
 // GET /api/rankings/capital
 // GET /api/rankings/pokemon
 // ------------------------------
+// 「今週」ランキング用: 日本時間の月曜0:00から現在までのクリア数（3モード合計）
+//   GET /api/rankings/weekly
+//   GET /api/rankings/weekly/me
+// クリア履歴 clear_events から集計する（記録が始まった日以降の分のみ）。
+// 同点は「その週の最後のクリアが早い人」が上位（先にその数に到達した人）。
+const RANKING_TYPES = ['total', 'country', 'capital', 'pokemon', 'weekly'];
+
+const WEEK_START_SQL =
+    `(date_trunc('week', NOW() AT TIME ZONE 'Asia/Tokyo') AT TIME ZONE 'Asia/Tokyo')`;
+
+const WEEKLY_SCORES_CTE = `
+    weekly AS (
+        SELECT
+            player_id,
+            COUNT(*)::integer AS score,
+            MAX(cleared_at) AS last_cleared_at
+        FROM clear_events
+        WHERE cleared_at >= ${WEEK_START_SQL}
+        GROUP BY player_id
+    )
+`;
+
+async function fetchWeeklyRanking() {
+    const result = await db.query(
+        `
+        WITH ${WEEKLY_SCORES_CTE}
+        SELECT
+            ROW_NUMBER() OVER (
+                ORDER BY w.score DESC, w.last_cleared_at ASC, p.id ASC
+            )::integer AS rank,
+            p.nickname,
+            w.score
+        FROM weekly w
+        INNER JOIN players p
+            ON p.id = w.player_id
+        ORDER BY w.score DESC, w.last_cleared_at ASC, p.id ASC
+        LIMIT 100;
+        `
+    );
+
+    return result.rows;
+}
+
+// 今週まだクリアしていない人は rank が null（score は 0）
+async function fetchWeeklyRankOf(playerId) {
+    const result = await db.query(
+        `
+        WITH ${WEEKLY_SCORES_CTE},
+        me AS (
+            SELECT score, last_cleared_at
+            FROM weekly
+            WHERE player_id = $1
+        )
+        SELECT
+            COALESCE((SELECT score FROM me), 0) AS score,
+            CASE
+                WHEN EXISTS (SELECT 1 FROM me) THEN (
+                    SELECT COUNT(*)::integer
+                    FROM weekly w
+                    CROSS JOIN me
+                    WHERE w.score > me.score
+                       OR (
+                            w.score = me.score
+                            AND (
+                                w.last_cleared_at < me.last_cleared_at
+                                OR (
+                                    w.last_cleared_at = me.last_cleared_at
+                                    AND w.player_id < $1
+                                )
+                            )
+                       )
+                ) + 1
+                ELSE NULL
+            END AS rank,
+            (SELECT COUNT(*)::integer FROM weekly) AS total;
+        `,
+        [playerId]
+    );
+
+    return result.rows[0];
+}
+
 app.get('/api/rankings/:type', async (req, res) => {
     const { type } = req.params;
 
-    if (!['total', 'country', 'capital', 'pokemon'].includes(type)) {
+    if (!RANKING_TYPES.includes(type)) {
         return res.status(400).json({
             message: '無効なランキング種別です。'
         });
+    }
+
+    if (type === 'weekly') {
+        try {
+            return res.json(await fetchWeeklyRanking());
+        } catch (error) {
+            console.error('今週のランキング取得に失敗しました。', {
+                name: error.name,
+                code: error.code
+            });
+
+            return res.status(500).json({
+                message: 'ランキングの取得に失敗しました。'
+            });
+        }
     }
 
     let scoreExpression;
@@ -1273,10 +1474,25 @@ function getRankingScoreExpression(type, alias) {
 app.get('/api/rankings/:type/me', requireAuth, async (req, res) => {
     const { type } = req.params;
 
-    if (!['total', 'country', 'capital', 'pokemon'].includes(type)) {
+    if (!RANKING_TYPES.includes(type)) {
         return res.status(400).json({
             message: '無効なランキング種別です。'
         });
+    }
+
+    if (type === 'weekly') {
+        try {
+            return res.json(await fetchWeeklyRankOf(req.auth.playerId));
+        } catch (error) {
+            console.error('今週の自分の順位の取得に失敗しました。', {
+                name: error.name,
+                code: error.code
+            });
+
+            return res.status(500).json({
+                message: '順位の取得中にエラーが発生しました。'
+            });
+        }
     }
 
     // type は上で許可リストと照合済みのため、式をそのまま埋め込んでも安全

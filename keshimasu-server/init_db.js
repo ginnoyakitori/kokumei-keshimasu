@@ -541,6 +541,34 @@ async function initializeSessionTable() {
 }
 
 // ------------------------------
+// クリア履歴テーブル（「今週のランキング」用）
+// 「誰が・どのモードの・どの問題を・いつ」初めてクリアしたかを1行ずつ記録する。
+// players のクリア済みIDには日時が無いため、期間別の集計にはこのテーブルを使う。
+// ※過去のクリアには日時が残っていないので、遡っての登録はしない（今週のランキングは記録開始後の分から）。
+// ------------------------------
+async function initializeClearEventsTable() {
+    await db.query(`
+        CREATE TABLE IF NOT EXISTS clear_events (
+            id BIGSERIAL PRIMARY KEY,
+            player_id INTEGER NOT NULL
+                REFERENCES players(id)
+                ON DELETE CASCADE,
+            mode VARCHAR(20) NOT NULL,
+            puzzle_id INTEGER NOT NULL,
+            cleared_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (player_id, mode, puzzle_id)
+        );
+    `);
+
+    await db.query(`
+        CREATE INDEX IF NOT EXISTS idx_clear_events_cleared_at
+        ON clear_events(cleared_at);
+    `);
+
+    console.log('✅ Table "clear_events" checked.');
+}
+
+// ------------------------------
 // すべてのマイグレーションを順番に実行する
 // migrate.js（デプロイ時）から呼ばれる。
 // RUN_MIGRATIONS_ON_START=true のときはサーバー起動時にも呼ばれる。
@@ -548,10 +576,12 @@ async function initializeSessionTable() {
 async function runMigrations() {
     await initializeDatabase();
     await initializeSessionTable();
+    await initializeClearEventsTable();
 }
 
 module.exports = {
     initializeDatabase,
     initializeSessionTable,
+    initializeClearEventsTable,
     runMigrations
 };

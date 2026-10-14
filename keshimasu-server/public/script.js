@@ -61,7 +61,8 @@ const screens = {
     create: document.getElementById('create-puzzle-screen'),
     ranking: document.getElementById('ranking-screen'),
     wordList: document.getElementById('word-list-screen'),
-    puzzleList: document.getElementById('puzzle-list-screen')
+    puzzleList: document.getElementById('puzzle-list-screen'),
+    demo: document.getElementById('demo-screen')
 };
 
 const appTitleElement = document.getElementById('app-title');
@@ -905,7 +906,40 @@ function findNextPuzzleId(mode, currentId) {
 
 // 戻り値: 'next' | 'list' | 'home'
 // 消したワードを順番に並べる（1つずつ「ポン」と現れる）
-function buildClearWords(words) {
+// ---------- 豆知識（国名なら首都など） ----------
+// サーバーの /api/facts/:mode から1回だけ取得してキャッシュする。
+// 取得に失敗しても、ゲームにも結果画面にも影響しない（豆知識が出ないだけ）。
+const FACTS_CACHE = {};
+
+function prefetchFacts(mode) {
+    if (!isValidMode(mode) || FACTS_CACHE[mode] !== undefined) return;
+
+    FACTS_CACHE[mode] = null; // 取得中（二重リクエスト防止）
+
+    fetchWithRetry(`${API_BASE_URL}/facts/${encodeURIComponent(mode)}`, {
+        headers: { Accept: 'application/json' }
+    })
+        .then(response => (response.ok ? response.json() : null))
+        .then(data => {
+            FACTS_CACHE[mode] = data && typeof data === 'object' ? data : {};
+        })
+        .catch(() => {
+            // 失敗したら次回また取得を試みる
+            delete FACTS_CACHE[mode];
+        });
+}
+
+function getFactFor(mode, word) {
+    const facts = FACTS_CACHE[mode];
+
+    if (!facts || !Object.prototype.hasOwnProperty.call(facts, word)) return '';
+
+    return String(facts[word] || '');
+}
+
+// 消したワードを順番に並べる（1つずつ「ポン」と現れる）
+// 豆知識があるワードはタップで詳細が開く
+function buildClearWords(words, mode = currentMode) {
     const wrapper = document.createElement('div');
 
     const caption = document.createElement('p');
@@ -916,15 +950,61 @@ function buildClearWords(words) {
     const list = document.createElement('div');
     list.className = 'clear-words';
 
+    const detail = document.createElement('p');
+    detail.className = 'clear-word-detail';
+    detail.setAttribute('role', 'status');
+    detail.hidden = true;
+
+    let hasAnyFact = false;
+    let activeChip = null;
+
     words.forEach((word, index) => {
-        const chip = document.createElement('span');
+        const fact = getFactFor(mode, word);
+        const chip = document.createElement(fact ? 'button' : 'span');
+
         chip.className = 'clear-word';
         chip.style.setProperty('--i', String(index));
         chip.textContent = word;
+
+        if (fact) {
+            hasAnyFact = true;
+            chip.type = 'button';
+            chip.classList.add('has-fact');
+            chip.setAttribute('aria-expanded', 'false');
+
+            chip.addEventListener('click', () => {
+                if (activeChip) {
+                    activeChip.classList.remove('active');
+                    activeChip.setAttribute('aria-expanded', 'false');
+                }
+
+                if (activeChip === chip) {
+                    activeChip = null;
+                    detail.hidden = true;
+                    return;
+                }
+
+                activeChip = chip;
+                chip.classList.add('active');
+                chip.setAttribute('aria-expanded', 'true');
+                detail.textContent = `${word}：${fact}`;
+                detail.hidden = false;
+            });
+        }
+
         list.appendChild(chip);
     });
 
     wrapper.appendChild(list);
+
+    if (hasAnyFact) {
+        const hint = document.createElement('p');
+        hint.className = 'clear-words-hint';
+        hint.textContent = '💡 ワードをタップすると豆知識が見られます';
+        wrapper.appendChild(hint);
+    }
+
+    wrapper.appendChild(detail);
 
     return wrapper;
 }
@@ -1061,9 +1141,13 @@ async function updateMyRank(type, requestId) {
         if (requestId !== rankingRequestCounter) return;
 
         element.hidden = false;
-        element.textContent =
-            `あなたの順位: ${Number(data.rank)}位 / ${Number(data.total)}人中` +
-            `（クリア数 ${Number(data.score)}問）`;
+        if (type === 'weekly' && (data.rank === null || data.rank === undefined)) {
+            element.textContent = '今週はまだクリアしていません。1問クリアするとランクインします！';
+        } else {
+            element.textContent =
+                `あなたの順位: ${Number(data.rank)}位 / ${Number(data.total)}人中` +
+                `（${type === 'weekly' ? '今週のクリア数' : 'クリア数'} ${Number(data.score)}問）`;
+        }
     } catch {
         if (requestId === rankingRequestCounter) {
             element.hidden = true;
@@ -1759,6 +1843,7 @@ async function attemptRegister(nickname, passcode) {
 }
 
 async function setupPlayer() {
+    startBootDemoTimer();
     currentPlayerId = null;
     currentPlayerNickname = null;
 
@@ -1773,7 +1858,7 @@ async function setupPlayer() {
 
         if (player) {
             await loadPuzzlesAndWords();
-            showScreen('home');
+            finishBoot('home');
             return;
         }
     } catch (error) {
@@ -1786,7 +1871,7 @@ async function setupPlayer() {
     }
 
     await loadPuzzlesAndWords();
-    showScreen('auth');
+    finishBoot('auth');
 }
 
 // ----------------------------------------------------
@@ -1882,11 +1967,33 @@ function showPuzzleListByMode(mode) {
 
     const sortedPuzzles = [...puzzles].sort((a, b) => Number(a.id) - Number(b.id));
 
+    const clearedTotal = sortedPuzzles.filter(p => clearedIds.has(Number(p.id))).length;
+    const remaining = sortedPuzzles.length - clearedTotal;
+
+    const progress = document.getElementById('puzzle-progress');
+    if (progress) {
+        progress.textContent = remaining === 0
+            ? `🎉 全${sortedPuzzles.length}問クリア！`
+            : `${clearedTotal} / ${sortedPuzzles.length} 問クリア（あと${remaining}問）`;
+    }
+
+    document.querySelectorAll('#puzzle-filter button').forEach(button => {
+        const active = button.dataset.filter === puzzleListFilter;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+
     let html = '';
+    let shown = 0;
 
     sortedPuzzles.forEach((puzzle, index) => {
     const puzzleId = Number(puzzle.id);
     const isCleared = clearedIds.has(puzzleId);
+
+    if (puzzleListFilter === 'unsolved' && isCleared) return;
+    if (puzzleListFilter === 'cleared' && !isCleared) return;
+
+    shown++;
 
     const creator = escapeHtml(
         puzzle.creator || '不明'
@@ -1923,8 +2030,51 @@ function showPuzzleListByMode(mode) {
         `;
     });
 
+    if (shown === 0) {
+        html = `<div class="puzzle-list-empty">${
+            puzzleListFilter === 'unsolved'
+                ? '🎉 未クリアの問題はありません！'
+                : 'クリア済みの問題はまだありません。'
+        }</div>`;
+    }
+
     container.innerHTML = html;
     showScreen('puzzleList');
+}
+
+// 一覧の絞り込み（すべて / 未クリア / クリア済）
+let puzzleListFilter = 'all';
+
+const puzzleFilterBar = document.getElementById('puzzle-filter');
+if (puzzleFilterBar) {
+    puzzleFilterBar.addEventListener('click', (event) => {
+        const button = event.target.closest('button[data-filter]');
+        if (!button || !currentListMode) return;
+
+        puzzleListFilter = button.dataset.filter;
+        showPuzzleListByMode(currentListMode);
+    });
+}
+
+// ホームの「次の未クリアへ」：ID順で最初の未クリア問題をすぐ始める
+function startNextUnsolved(mode) {
+    const puzzles = [...(allPuzzles[mode]?.puzzles || [])].sort(
+        (a, b) => Number(a.id) - Number(b.id)
+    );
+    const clearedIds = new Set(
+        [
+            ...(allPuzzles[mode]?.cleared_ids || []),
+            ...getClearedPuzzles(mode)
+        ].map(id => Number(id))
+    );
+    const next = puzzles.find(p => !clearedIds.has(Number(p.id)));
+
+    if (!next) {
+        showToast(`🎉 ${getModeName(mode)}の問題はすべてクリア済みです！`);
+        return;
+    }
+
+    startPuzzleById(mode, Number(next.id));
 }
 
 // 既存互換用
@@ -1980,9 +2130,11 @@ function startPuzzleById(mode, puzzleId) {
     const creatorName = selectedPuzzle.creator || '不明';
     document.getElementById('creator-display').textContent = `制作者: ${creatorName}`;
 
+    prefetchFacts(mode);
     updateStatusDisplay();
     renderBoard(5);
     showScreen('mainGame');
+    maybeShowDragHint();
 }
 
 // ----------------------------------------------------
@@ -2033,8 +2185,10 @@ function startGameByMode(mode, isCreation) {
         initialPlayData = dropBoardLetters(selectedPuzzle.data);
         boardData = JSON.parse(JSON.stringify(initialPlayData));
 
-        const nextProblemNumber = (playerStats[`${mode}_clears`] || 0) + 1;
-        document.getElementById('problem-number-display').textContent = `第 ${nextProblemNumber} 問`;
+        // 一覧と同じ番号（ID順の何番目か）で表示する
+        document.getElementById('problem-number-display').textContent =
+            `第 ${currentPuzzleIndex + 1} 問`;
+        prefetchFacts(mode);
 
     } else {
         currentPuzzleIndex = -1;
@@ -2062,6 +2216,7 @@ function startGameByMode(mode, isCreation) {
     updateStatusDisplay();
     renderBoard(5);
     showScreen('mainGame');
+    if (!isCreation) maybeShowDragHint();
 }
 
 // 既存互換用
@@ -3353,7 +3508,9 @@ async function fetchAndDisplayRanking(type) {
 
         let title = '総合';
 
-        if (type === 'country') {
+        if (type === 'weekly') {
+            title = '今週';
+        } else if (type === 'country') {
             title = '国名';
         } else if (type === 'capital') {
             title = '首都名';
@@ -3369,7 +3526,7 @@ async function fetchAndDisplayRanking(type) {
                     <tr>
                         <th>順位</th>
                         <th>ニックネーム</th>
-                        <th>クリア数</th>
+                        <th>${type === 'weekly' ? '今週のクリア数' : 'クリア数'}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -3665,6 +3822,337 @@ document.getElementById('btn-ranking-back').addEventListener('click', () => {
 
 document.getElementById('btn-word-list-back').addEventListener('click', () => {
     showScreen('home');
+});
+
+
+// ----------------------------------------------------
+// 6.5. 待ち時間ミニゲーム（サーバー起動待ちのデモ盤面）と初回ドラッグ案内
+// ----------------------------------------------------
+// 無料のRenderはスリープ復帰に最大1分かかる。起動待ちが少し長引いたら、
+// サーバー無しで遊べる小さな盤面を出して、待ち時間の離脱を減らす。
+// （スコアは保存しない。準備ができたら「ゲームへ進む」ボタンで本番へ。）
+const DEMO_GRID = [
+    ['ケ', 'イ', 'ペ', 'ガ', 'ラ'],
+    ['ニ', 'ン', 'ル', 'ー', 'オ'],
+    ['ア', 'ド', 'ー', 'ナ', 'ス']
+];
+const DEMO_WORDS = new Set(['ケニア', 'インド', 'ペルー', 'ガーナ', 'ラオス']);
+const BOOT_DEMO_DELAY_MS = 1800;
+
+let bootFinished = false;
+let bootDemoTimer = null;
+let bootTarget = null;
+
+function startBootDemoTimer() {
+    bootFinished = false;
+    bootTarget = null;
+    clearTimeout(bootDemoTimer);
+    bootDemoTimer = setTimeout(() => {
+        if (!bootFinished) DEMO.open();
+    }, BOOT_DEMO_DELAY_MS);
+}
+
+function finishBoot(screenName) {
+    bootFinished = true;
+    clearTimeout(bootDemoTimer);
+
+    if (DEMO.isOpen()) {
+        bootTarget = screenName;
+        DEMO.markReady(screenName);
+    } else {
+        showScreen(screenName);
+    }
+}
+
+const DEMO = (() => {
+    const boardEl = document.getElementById('demo-board');
+    const wordEl = document.getElementById('demo-word');
+    const eraseBtn = document.getElementById('demo-erase');
+    const resetBtn = document.getElementById('demo-reset');
+    const continueBtn = document.getElementById('demo-continue');
+    const statusEl = document.getElementById('demo-status');
+
+    let sel = [];
+    let removed = new Set();
+    let dragging = false;
+    let opened = false;
+    let ready = false;
+
+    const key = (r, c) => `${r},${c}`;
+    const inSel = (r, c) => sel.some(p => p[0] === r && p[1] === c);
+    const word = () => sel.map(([r, c]) => DEMO_GRID[r][c]).join('');
+    const isValid = () => sel.length >= 2 && DEMO_WORDS.has(word());
+    const safeFx = (name) => { try { FX[name](); } catch { /* 音は無くても進行に影響しない */ } };
+
+    function render() {
+        if (!boardEl) return;
+        boardEl.innerHTML = '';
+
+        DEMO_GRID.forEach((row, r) => {
+            row.forEach((ch, c) => {
+                const gone = removed.has(key(r, c));
+                const cell = document.createElement(gone ? 'div' : 'button');
+                cell.className = 'cell' + (gone ? ' empty' : '');
+                cell.dataset.r = r;
+                cell.dataset.c = c;
+
+                if (!gone) {
+                    cell.type = 'button';
+                    cell.textContent = ch;
+                    const order = sel.findIndex(p => p[0] === r && p[1] === c);
+                    if (order > -1) {
+                        cell.classList.add('selected');
+                        if (isValid()) cell.classList.add('valid');
+                        cell.dataset.order = String(order + 1);
+                    }
+                } else {
+                    cell.setAttribute('aria-hidden', 'true');
+                }
+
+                boardEl.appendChild(cell);
+            });
+        });
+
+        const text = word();
+        wordEl.textContent = text || ' ';
+        wordEl.dataset.state = !text ? '' : (isValid() ? 'valid' : '');
+        eraseBtn.disabled = !isValid();
+        eraseBtn.classList.toggle('ready', isValid());
+    }
+
+    function cellFromEvent(event) {
+        const el = document.elementFromPoint(event.clientX, event.clientY);
+        const cell = el && el.closest ? el.closest('#demo-board button.cell') : null;
+        return cell ? [Number(cell.dataset.r), Number(cell.dataset.c)] : null;
+    }
+
+    function tryExtend(r, c) {
+        if (removed.has(key(r, c))) return false;
+
+        const last = sel[sel.length - 1];
+
+        if (!last) { sel = [[r, c]]; return true; }
+
+        // 1つ前のマスに戻ったら、1マス取り消す
+        const prev = sel[sel.length - 2];
+        if (prev && prev[0] === r && prev[1] === c) { sel.pop(); return true; }
+
+        if (inSel(r, c)) return false;
+
+        const dr = r - last[0];
+        const dc = c - last[1];
+        if (Math.abs(dr) + Math.abs(dc) !== 1) return false;
+
+        if (sel.length >= 2) {
+            const axisR = sel[1][0] - sel[0][0];
+            const axisC = sel[1][1] - sel[0][1];
+            if (dr !== axisR || dc !== axisC) return false;
+        }
+
+        sel.push([r, c]);
+        return true;
+    }
+
+    function onDown(event) {
+        const pos = cellFromEvent(event);
+        if (!pos) return;
+        event.preventDefault();
+
+        dragging = true;
+
+        // 続けてタップしたマスが一直線につながるなら選択を伸ばす。そうでなければ選び直す
+        if (!tryExtend(pos[0], pos[1])) {
+            sel = removed.has(key(pos[0], pos[1])) ? sel : [[pos[0], pos[1]]];
+        }
+        render();
+    }
+
+    function onMove(event) {
+        if (!dragging) return;
+        const pos = cellFromEvent(event);
+        if (pos && tryExtend(pos[0], pos[1])) render();
+    }
+
+    function onUp() { dragging = false; }
+
+    function erase() {
+        if (!isValid()) { safeFx('error'); return; }
+
+        sel.forEach(([r, c]) => removed.add(key(r, c)));
+        sel = [];
+        safeFx('erase');
+        render();
+
+        if (removed.size === DEMO_GRID.length * DEMO_GRID[0].length) {
+            safeFx('clear');
+            statusEl.textContent = ready
+                ? '🎉 クリア！サーバーの準備もできました。'
+                : '🎉 クリア！サーバーの準備ができるまで、もう少しお待ちください。';
+        }
+    }
+
+    function reset() {
+        sel = [];
+        removed = new Set();
+        render();
+    }
+
+    function open() {
+        if (opened) return;
+        opened = true;
+        reset();
+        showScreen('demo');
+    }
+
+    function markReady(target) {
+        ready = true;
+        statusEl.textContent = 'サーバーの準備ができました！いつでも本番へ進めます。';
+        continueBtn.disabled = false;
+        continueBtn.textContent = target === 'auth' ? 'ログイン画面へ進む' : 'ゲームへ進む';
+        continueBtn.classList.add('ready');
+    }
+
+    if (boardEl) {
+        boardEl.addEventListener('pointerdown', onDown);
+        boardEl.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onUp);
+        eraseBtn.addEventListener('click', erase);
+        resetBtn.addEventListener('click', reset);
+        continueBtn.addEventListener('click', () => {
+            opened = false;
+            showScreen(bootTarget || 'auth');
+        });
+    }
+
+    return {
+        open,
+        markReady,
+        isOpen: () => opened && screens.demo && screens.demo.style.display !== 'none'
+    };
+})();
+
+// ---------- 初回だけのドラッグ操作ガイド ----------
+const DRAG_HINT_KEY = 'keshimasu_drag_hint_seen_v1';
+
+function hasSeenDragHint() {
+    try { return localStorage.getItem(DRAG_HINT_KEY) === '1'; } catch { return false; }
+}
+
+function markDragHintSeen() {
+    try { localStorage.setItem(DRAG_HINT_KEY, '1'); } catch { /* 保存できなくても問題ない */ }
+}
+
+// 盤面の中から、実際に消せるワードを1つ探す（縦・横の一直線）
+function findHintWord() {
+    const startRow = boardData.length - 5;
+    let best = null;
+
+    for (let r = startRow; r < boardData.length; r++) {
+        for (let c = 0; c < boardData[r].length; c++) {
+            for (const [dr, dc] of [[0, 1], [1, 0]]) {
+                let text = '';
+                for (let k = 0; k < 8; k++) {
+                    const rr = r + dr * k;
+                    const cc = c + dc * k;
+                    if (rr >= boardData.length || cc >= boardData[rr].length) break;
+                    const ch = boardData[rr][cc];
+                    if (ch === '') break;
+                    text += ch;
+                    if (text.length >= 2 && currentDictionary && currentDictionary.has(text)) {
+                        const cand = { from: [r, c], to: [rr, cc], len: text.length };
+                        if (!best || (best.len < 3 && cand.len >= 3)) best = cand;
+                    }
+                }
+                if (best && best.len >= 3) return best;
+            }
+        }
+    }
+
+    return best;
+}
+
+let dragHintCleanup = null;
+
+function maybeShowDragHint() {
+    if (hasSeenDragHint() || isCreationPlay) return;
+
+    // チュートリアル表示中などは邪魔しない
+    if (document.querySelector('.modal-overlay')) return;
+
+    setTimeout(() => {
+        if (hasSeenDragHint() || screens.mainGame.style.display === 'none') return;
+
+        const hint = findHintWord();
+        if (!hint) return;
+
+        const fromEl = boardElement.querySelector(
+            `[data-r="${hint.from[0]}"][data-c="${hint.from[1]}"]`
+        );
+        const toEl = boardElement.querySelector(
+            `[data-r="${hint.to[0]}"][data-c="${hint.to[1]}"]`
+        );
+        if (!fromEl || !toEl) return;
+
+        markDragHintSeen();
+
+        const a = fromEl.getBoundingClientRect();
+        const b = toEl.getBoundingClientRect();
+        const start = { x: a.left + a.width / 2, y: a.top + a.height / 2 };
+        const end = { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+
+        const finger = document.createElement('div');
+        finger.className = 'drag-hint-finger';
+        finger.textContent = '👆';
+        finger.setAttribute('aria-hidden', 'true');
+        finger.style.left = `${start.x}px`;
+        finger.style.top = `${start.y}px`;
+
+        const bubble = document.createElement('div');
+        bubble.className = 'drag-hint-bubble';
+        bubble.setAttribute('role', 'status');
+        bubble.textContent = 'ここをなぞってみよう！';
+        bubble.style.left = `${(start.x + end.x) / 2}px`;
+        bubble.style.top = `${Math.min(start.y, end.y) - a.height * 0.9}px`;
+
+        document.body.append(finger, bubble);
+        fromEl.classList.add('hint-cell');
+        toEl.classList.add('hint-cell');
+
+        let animation = null;
+
+        const cleanup = () => {
+            if (animation) animation.cancel();
+            finger.remove();
+            bubble.remove();
+            fromEl.classList.remove('hint-cell');
+            toEl.classList.remove('hint-cell');
+            document.removeEventListener('pointerdown', cleanup, true);
+            clearTimeout(timeoutId);
+            dragHintCleanup = null;
+        };
+
+        if (!prefersReducedMotion() && finger.animate) {
+            animation = finger.animate(
+                [
+                    { transform: 'translate(-50%, -30%) scale(1)', opacity: 0 },
+                    { transform: 'translate(-50%, -30%) scale(0.9)', opacity: 1, offset: 0.15 },
+                    { transform: `translate(calc(-50% + ${end.x - start.x}px), calc(-30% + ${end.y - start.y}px)) scale(0.9)`, opacity: 1, offset: 0.75 },
+                    { transform: `translate(calc(-50% + ${end.x - start.x}px), calc(-30% + ${end.y - start.y}px)) scale(1)`, opacity: 0 }
+                ],
+                { duration: 1600, iterations: 3, easing: 'ease-in-out' }
+            );
+        }
+
+        const timeoutId = setTimeout(cleanup, 6000);
+        document.addEventListener('pointerdown', cleanup, true);
+        dragHintCleanup = cleanup;
+    }, 450);
+}
+
+// ホームの「次の未クリアへ」
+document.querySelectorAll('.next-unsolved-btn').forEach(button => {
+    button.addEventListener('click', () => startNextUnsolved(button.dataset.mode));
 });
 
 // ----------------------------------------------------

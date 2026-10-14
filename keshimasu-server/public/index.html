@@ -74,16 +74,19 @@
                 <div class="mode-card">
                     <button id="btn-country-mode">国名ケシマス</button>
                     <span id="country-problem-count" class="problem-count-display">問題数: 0問</span>
+                    <button type="button" class="next-unsolved-btn" data-mode="country">▶ 次の未クリアへ</button>
                 </div>
 
                 <div class="mode-card">
                     <button id="btn-capital-mode">首都名ケシマス</button>
                     <span id="capital-problem-count" class="problem-count-display">問題数: 0問</span>
+                    <button type="button" class="next-unsolved-btn" data-mode="capital">▶ 次の未クリアへ</button>
                 </div>
 
                 <div class="mode-card">
                     <button id="btn-pokemon-mode">ポケモンケシマス</button>
                     <span id="pokemon-problem-count" class="problem-count-display">問題数: 0問</span>
+                    <button type="button" class="next-unsolved-btn" data-mode="pokemon">▶ 次の未クリアへ</button>
                 </div>
 
                 <div class="mode-card">
@@ -106,6 +109,20 @@
             </div>
         </div>
 
+        <!-- サーバー起動待ちの間に遊べるデモ盤面 -->
+        <div id="demo-screen" class="screen" style="display:none;">
+            <h2>待ち時間ミニゲーム</h2>
+            <p id="demo-status" role="status">サーバーを起動しています…遊びながらお待ちください（スコアは保存されません）</p>
+            <p class="demo-help">縦か横に一直線になるよう、文字をなぞって国名を作り、「消す」を押そう。</p>
+            <div id="demo-board" role="group" aria-label="デモ盤面"></div>
+            <div id="demo-word" aria-live="polite">&nbsp;</div>
+            <div class="demo-actions">
+                <button id="demo-erase" type="button" disabled>消す</button>
+                <button id="demo-reset" type="button" class="secondary-btn">やり直す</button>
+            </div>
+            <button id="demo-continue" type="button" disabled>準備中…</button>
+        </div>
+
         <!-- 問題一覧画面 -->
         <div id="puzzle-list-screen" class="screen" style="display:none;">
             <h2 id="puzzle-list-title">問題一覧</h2>
@@ -113,6 +130,13 @@
             <p id="puzzle-list-note">
                 挑戦したい問題を選んでください。
             </p>
+
+            <div id="puzzle-filter" role="group" aria-label="表示の絞り込み">
+                <button type="button" data-filter="all" class="active" aria-pressed="true">すべて</button>
+                <button type="button" data-filter="unsolved" aria-pressed="false">未クリア</button>
+                <button type="button" data-filter="cleared" aria-pressed="false">クリア済</button>
+            </div>
+            <p id="puzzle-progress" role="status"></p>
 
             <div id="puzzle-list-container">
             </div>
@@ -184,6 +208,7 @@
             <h2>ランキング</h2>
 
             <div id="ranking-tabs">
+                <button data-type="weekly">今週</button>
                 <button data-type="total">総合</button>
                 <button data-type="country">国名</button>
                 <button data-type="capital">首都名</button>
