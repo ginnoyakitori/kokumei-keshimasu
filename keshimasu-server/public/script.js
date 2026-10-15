@@ -311,6 +311,46 @@ function createSoundToggle() {
 
 createSoundToggle();
 
+// 画面右上の「表示テーマ」ボタン（ダーク → ライト → 端末に合わせる → ダーク…）
+const THEME_CYCLE = ['dark', 'light', 'auto'];
+const THEME_LABELS = {
+    dark: { icon: '🌙', name: 'ダーク' },
+    light: { icon: '☀️', name: 'ライト' },
+    auto: { icon: '🌓', name: '端末の設定に合わせる' }
+};
+
+function createThemeToggle() {
+    if (!window.KeshiTheme) return;
+
+    const button = document.createElement('button');
+
+    button.type = 'button';
+    button.id = 'theme-toggle';
+
+    const render = () => {
+        const current = THEME_LABELS[window.KeshiTheme.get()];
+
+        button.textContent = current.icon;
+        button.setAttribute('aria-label', `表示テーマ: ${current.name}（押すと切り替え）`);
+        button.title = `表示テーマ: ${current.name}`;
+    };
+
+    button.addEventListener('click', () => {
+        const next = THEME_CYCLE[
+            (THEME_CYCLE.indexOf(window.KeshiTheme.get()) + 1) % THEME_CYCLE.length
+        ];
+
+        window.KeshiTheme.set(next);
+        render();
+        showToast(`表示テーマ: ${THEME_LABELS[next].name}`, 'info');
+    });
+
+    render();
+    document.body.appendChild(button);
+}
+
+createThemeToggle();
+
 // ---------- 消去・落下アニメーション ----------
 let isAnimating = false;       // 演出中は盤面を操作できない
 let pendingFall = null;        // 次の renderBoard で落下させるマス（"行,列" → 落ちる段数）
