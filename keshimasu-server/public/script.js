@@ -62,6 +62,8 @@ const screens = {
     ranking: document.getElementById('ranking-screen'),
     wordList: document.getElementById('word-list-screen'),
     puzzleList: document.getElementById('puzzle-list-screen'),
+    collection: document.getElementById('collection-screen'),
+    myPuzzles: document.getElementById('my-puzzles-screen'),
     demo: document.getElementById('demo-screen')
 };
 
@@ -1009,7 +1011,7 @@ function buildClearWords(words, mode = currentMode) {
     return wrapper;
 }
 
-function showClearResult(modeName, clearedCount, hasNext, shareText, words = []) {
+function showClearResult(modeName, clearedCount, hasNext, shareText, words = [], puzzleRef = null) {
     const buttons = [];
 
     if (hasNext) {
@@ -1020,7 +1022,10 @@ function showClearResult(modeName, clearedCount, hasNext, shareText, words = [])
         buttons.push({
             label: '結果をシェアする',
             secondary: true,
-            action: () => shareResult(shareText)
+            action: () => shareResult(
+                shareText,
+                puzzleRef ? puzzleUrl(puzzleRef.mode, puzzleRef.id) : undefined
+            )
         });
     }
 
@@ -1035,7 +1040,15 @@ function showClearResult(modeName, clearedCount, hasNext, shareText, words = [])
             `全ての文字を消去しました！\n` +
             `あなたの${modeName}クリア数は${clearedCount}問になりました。` +
             (hasNext ? '' : '\n挑戦できる未クリアの問題はもうありません。'),
-        content: words.length > 0 ? () => buildClearWords(words) : null,
+        content: () => {
+            const box = document.createElement('div');
+            const likeRow = puzzleRef ? buildLikeRow(puzzleRef.mode, puzzleRef.id) : null;
+
+            if (likeRow) box.appendChild(likeRow);
+            if (words.length > 0) box.appendChild(buildClearWords(words));
+
+            return box;
+        },
         className: 'clear-modal',
         buttons,
         cancelValue: 'home'
@@ -1078,8 +1091,8 @@ function undoLastMove() {
 }
 
 // ---------- SNSシェア ----------
-async function shareResult(text) {
-    const url = `${location.origin}/`;
+async function shareResult(text, pageUrl) {
+    const url = pageUrl || `${location.origin}/`;
 
     // スマホなどは端末の共有メニューを使う
     if (navigator.share) {
@@ -1540,6 +1553,7 @@ async function loadPuzzlesAndWords() {
         await loadDictionariesOnce();
 
         updateHomeProblemCount();
+        syncCollectionAfterLoad();
     } catch (error) {
         console.error(
             '問題または辞書の読み込みに失敗しました。',
@@ -1884,9 +1898,19 @@ function showScreen(screenName) {
         }
     });
 
+    if (screenName === 'auth' && pendingDeepLink && !deepLinkHintShown) {
+        deepLinkHintShown = true;
+        showToast('共有された問題が待っています！ログインかゲストプレイで始めましょう。', 'info');
+    }
+
+    if (screenName === 'home' && consumePendingDeepLink()) {
+        return;
+    }
+
     if (screenName === 'home') {
         appTitleElement.style.display = 'block';
         updateHomeProblemCount();
+        updateCollectionSummary();
         scheduleTutorial();
 
         if (isLoggedIn() && currentPlayerNickname) {
@@ -1966,6 +1990,15 @@ function showPuzzleListByMode(mode) {
     }
 
     const sortedPuzzles = [...puzzles].sort((a, b) => Number(a.id) - Number(b.id));
+    const numberById = new Map(
+        sortedPuzzles.map((p, i) => [Number(p.id), i + 1])
+    );
+    const displayPuzzles = puzzleListSort === 'popular'
+        ? [...sortedPuzzles].sort((a, b) =>
+            (Number(b.like_count) || 0) - (Number(a.like_count) || 0) ||
+            (Number(b.clear_count) || 0) - (Number(a.clear_count) || 0) ||
+            Number(a.id) - Number(b.id))
+        : sortedPuzzles;
 
     const clearedTotal = sortedPuzzles.filter(p => clearedIds.has(Number(p.id))).length;
     const remaining = sortedPuzzles.length - clearedTotal;
@@ -1977,6 +2010,12 @@ function showPuzzleListByMode(mode) {
             : `${clearedTotal} / ${sortedPuzzles.length} 問クリア（あと${remaining}問）`;
     }
 
+    document.querySelectorAll('#puzzle-sort button').forEach(button => {
+        const active = button.dataset.sort === puzzleListSort;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+
     document.querySelectorAll('#puzzle-filter button').forEach(button => {
         const active = button.dataset.filter === puzzleListFilter;
         button.classList.toggle('active', active);
@@ -1986,9 +2025,15 @@ function showPuzzleListByMode(mode) {
     let html = '';
     let shown = 0;
 
-    sortedPuzzles.forEach((puzzle, index) => {
+    displayPuzzles.forEach((puzzle) => {
     const puzzleId = Number(puzzle.id);
     const isCleared = clearedIds.has(puzzleId);
+    const puzzleNumber = numberById.get(puzzleId);
+    const likeCount = Number(puzzle.like_count) || 0;
+    const liked = isPuzzleLiked(mode, puzzleId);
+    const likeHtml = (isCleared && canLikePuzzle(mode, puzzleId))
+        ? `<button type="button" class="puzzle-like-btn ${liked ? 'liked' : ''}" data-action="like" data-id="${puzzleId}" aria-pressed="${liked}">${liked ? '♥' : '♡'} ${likeCount}</button>`
+        : `<span class="puzzle-like-static">♥ ${likeCount}</span>`;
 
     if (puzzleListFilter === 'unsolved' && isCleared) return;
     if (puzzleListFilter === 'cleared' && !isCleared) return;
@@ -2009,7 +2054,7 @@ function showPuzzleListByMode(mode) {
     html += `
             <div class="puzzle-card ${isCleared ? 'cleared' : 'uncleared'}">
                 <div class="puzzle-card-header">
-                    <div class="puzzle-number">第 ${index + 1} 問</div>
+                    <div class="puzzle-number">第 ${puzzleNumber} 問${(puzzleListSort === 'popular' && likeCount > 0 && displayPuzzles.indexOf(puzzle) < 3) ? ' 🔥' : ''}</div>
                     <div class="puzzle-status ${isCleared ? 'cleared' : 'uncleared'}">
                         ${isCleared ? 'クリア済' : '未クリア'}
                     </div>
@@ -2026,6 +2071,11 @@ function showPuzzleListByMode(mode) {
                 <button class="puzzle-challenge-btn" onclick="startPuzzleById('${mode}', ${puzzleId})">
                     ${isCleared ? 'もう一度挑戦する' : 'この問題に挑戦する'}
                 </button>
+
+                <div class="puzzle-card-actions">
+                    ${likeHtml}
+                    <button type="button" class="puzzle-share-btn" data-action="share" data-id="${puzzleId}">共有</button>
+                </div>
             </div>
         `;
     });
@@ -2044,6 +2094,7 @@ function showPuzzleListByMode(mode) {
 
 // 一覧の絞り込み（すべて / 未クリア / クリア済）
 let puzzleListFilter = 'all';
+let puzzleListSort = 'id';
 
 const puzzleFilterBar = document.getElementById('puzzle-filter');
 if (puzzleFilterBar) {
@@ -2134,6 +2185,8 @@ function startPuzzleById(mode, puzzleId) {
     updateStatusDisplay();
     renderBoard(5);
     showScreen('mainGame');
+    updateShareButton();
+    pingPuzzle('play', currentPuzzleId);
     maybeShowDragHint();
 }
 
@@ -2216,7 +2269,11 @@ function startGameByMode(mode, isCreation) {
     updateStatusDisplay();
     renderBoard(5);
     showScreen('mainGame');
-    if (!isCreation) maybeShowDragHint();
+    updateShareButton();
+    if (!isCreation) {
+        pingPuzzle('play', currentPuzzleId);
+        maybeShowDragHint();
+    }
 }
 
 // 既存互換用
@@ -2636,6 +2693,11 @@ async function submitNewPuzzle(mode, newBoardData) {
         );
 
         await loadPuzzlesAndWords();
+
+        if (data?.puzzle?.id) {
+            await showPuzzleRegisteredModal(mode, data.puzzle.id);
+        }
+
         return true;
     } catch (error) {
         console.error('問題登録に失敗しました。', {
@@ -2667,6 +2729,8 @@ async function checkGameStatus() {
     if (!isCreationPlay) {
         // 盤面の内容ではなく、プレイ開始時に保持した問題IDでクリアを記録する
         if (currentPuzzleId) {
+            pingPuzzle('complete', currentPuzzleId);
+            flushCollectQueue();
             markPuzzleAsCleared(mode, currentPuzzleId);
 
             if (currentPlayerId) {
@@ -2698,7 +2762,8 @@ async function checkGameStatus() {
             latestClearedCount,
             nextPuzzleId !== null,
             shareText,
-            clearedWords
+            clearedWords,
+            clearedPuzzleId ? { mode, id: clearedPuzzleId } : null
         );
 
         if (choice === 'next' && nextPuzzleId !== null) {
@@ -3239,6 +3304,7 @@ eraseButton.addEventListener('click', async () => {
         });
 
         usedWords.push(finalWord);
+        recordCollected(currentMode, finalWord);
 
         pendingFall = computeFallMap(boardData);
         applyGravity();
@@ -3720,6 +3786,7 @@ if (logoutButton) {
             logoutButton.disabled = true;
 
             try {
+                await flushCollectQueue();
                 await fetchWithRetry(
                     `${API_BASE_URL}/player/logout`,
                     {
@@ -4154,6 +4221,709 @@ function maybeShowDragHint() {
 document.querySelectorAll('.next-unsolved-btn').forEach(button => {
     button.addEventListener('click', () => startNextUnsolved(button.dataset.mode));
 });
+
+// ----------------------------------------------------
+// 6.8 図鑑（コレクション）・問題の統計・いいね・共有リンク
+// ----------------------------------------------------
+const COLLECTION_MODES = ['country', 'capital', 'pokemon'];
+const MAX_ERASABLE_LENGTH = 5; // 盤面は縦5段なので、消せるのは5文字以下
+
+let collectionData = { country: {}, capital: {}, pokemon: {} }; // word -> { count, at }
+let collectionOwner = null;        // collectionData がどのプレイヤー（guest / ID）のものか
+let collectionServerOwner = null;  // サーバーから取得済みのプレイヤーID
+let collectQueue = [];
+let collectFlushTimer = null;
+let collectFlushing = false;
+let collectionViewMode = 'country';
+let collectionFilter = 'all';
+const collectibleCache = {};
+
+function collectionOwnerKey() {
+    return isLoggedIn() ? String(currentPlayerId) : 'guest';
+}
+
+function ensureCollectionOwner() {
+    const key = collectionOwnerKey();
+
+    if (collectionOwner === key) return;
+
+    collectionOwner = key;
+    collectQueue = [];
+    collectionData = { country: {}, capital: {}, pokemon: {} };
+
+    try {
+        const raw = localStorage.getItem(`keshimasu_collection_v1_${key}`);
+        const parsed = raw ? JSON.parse(raw) : null;
+
+        if (parsed && typeof parsed === 'object') {
+            for (const mode of COLLECTION_MODES) {
+                if (parsed[mode] && typeof parsed[mode] === 'object') {
+                    collectionData[mode] = parsed[mode];
+                }
+            }
+        }
+    } catch {
+        // 読めなければ空の図鑑から始める
+    }
+}
+
+function saveCollectionLocal() {
+    try {
+        localStorage.setItem(
+            `keshimasu_collection_v1_${collectionOwnerKey()}`,
+            JSON.stringify(collectionData)
+        );
+    } catch {
+        // 保存できなくてもゲームは続ける
+    }
+}
+
+// 図鑑の対象 = 辞書のうち5文字以下のワード
+function getCollectibleWords(mode) {
+    const dict = getDictionaryByMode(mode);
+
+    if (!dict || dict.length === 0) return [];
+
+    const cached = collectibleCache[mode];
+
+    if (cached && cached.source === dict) return cached.words;
+
+    const words = [...new Set(dict)].filter(
+        word => [...word].length <= MAX_ERASABLE_LENGTH
+    );
+
+    collectibleCache[mode] = { source: dict, words };
+
+    return words;
+}
+
+function collectedCount(mode) {
+    const bucket = collectionData[mode] || {};
+
+    return getCollectibleWords(mode).filter(word => bucket[word]).length;
+}
+
+function updateCollectionSummary() {
+    const element = document.getElementById('collection-summary');
+
+    if (!element) return;
+
+    ensureCollectionOwner();
+
+    let got = 0;
+    let total = 0;
+
+    for (const mode of COLLECTION_MODES) {
+        got += collectedCount(mode);
+        total += getCollectibleWords(mode).length;
+    }
+
+    element.textContent = total > 0
+        ? `集めたワード: ${got} / ${total}`
+        : '集めたワード: -';
+}
+
+function recordCollected(mode, word) {
+    if (
+        !isValidMode(mode) ||
+        typeof word !== 'string' ||
+        [...word].length > MAX_ERASABLE_LENGTH
+    ) {
+        return;
+    }
+
+    ensureCollectionOwner();
+
+    const bucket = collectionData[mode];
+    const entry = bucket[word];
+
+    if (entry) {
+        entry.count = (Number(entry.count) || 0) + 1;
+    } else {
+        bucket[word] = { count: 1, at: new Date().toISOString() };
+    }
+
+    saveCollectionLocal();
+    updateCollectionSummary();
+
+    if (isLoggedIn()) {
+        collectQueue.push({ mode, word });
+
+        if (collectQueue.length >= 20) {
+            flushCollectQueue();
+        } else {
+            clearTimeout(collectFlushTimer);
+            collectFlushTimer = setTimeout(flushCollectQueue, 3000);
+        }
+    }
+
+    if (!entry) {
+        const total = getCollectibleWords(mode).length;
+
+        showToast(
+            `📖 図鑑に追加: ${word}（${getShortModeName(mode)} ${collectedCount(mode)}/${total}）`,
+            'success'
+        );
+    }
+}
+
+async function flushCollectQueue(options = {}) {
+    clearTimeout(collectFlushTimer);
+
+    if (!isLoggedIn() || collectQueue.length === 0 || collectFlushing) return;
+
+    collectFlushing = true;
+
+    const owner = collectionOwner;
+    const batch = collectQueue.splice(0, 200);
+    let sent = false;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/collection/collect`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            keepalive: Boolean(options.keepalive),
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: batch })
+        });
+
+        // 400/401 は再送しても通らないので捨てる。それ以外は次回に再送する
+        sent = response.ok || response.status === 400 || response.status === 401;
+    } catch {
+        sent = false;
+    } finally {
+        collectFlushing = false;
+    }
+
+    if (!sent && collectionOwner === owner) {
+        collectQueue.unshift(...batch);
+    }
+
+    if (sent && collectQueue.length > 0) {
+        flushCollectQueue(options);
+    }
+}
+
+async function refreshCollectionFromServer() {
+    if (!isLoggedIn()) return false;
+
+    ensureCollectionOwner();
+
+    const owner = collectionOwner;
+
+    await flushCollectQueue();
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/collection`, {
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json' }
+        });
+
+        if (!response.ok) return false;
+
+        const data = await response.json();
+
+        if (collectionOwner !== owner || !data || !data.modes) return false;
+
+        const next = { country: {}, capital: {}, pokemon: {} };
+
+        for (const mode of COLLECTION_MODES) {
+            for (const item of (data.modes[mode]?.words || [])) {
+                next[mode][item.word] = { count: item.count, at: item.at };
+            }
+        }
+
+        // まだ送れていない分を上乗せする
+        for (const { mode, word } of collectQueue) {
+            const entry = next[mode][word];
+
+            if (entry) {
+                entry.count += 1;
+            } else {
+                next[mode][word] = { count: 1, at: new Date().toISOString() };
+            }
+        }
+
+        collectionData = next;
+        saveCollectionLocal();
+
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function syncCollectionAfterLoad() {
+    ensureCollectionOwner();
+
+    if (isLoggedIn() && collectionServerOwner !== currentPlayerId) {
+        collectionServerOwner = currentPlayerId;
+
+        refreshCollectionFromServer().then(ok => {
+            if (!ok) collectionServerOwner = null;
+            updateCollectionSummary();
+        });
+    } else {
+        updateCollectionSummary();
+    }
+}
+
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+        flushCollectQueue({ keepalive: true });
+    }
+});
+
+window.addEventListener('pagehide', () => {
+    flushCollectQueue({ keepalive: true });
+});
+
+// ---------- 図鑑画面 ----------
+function renderCollection() {
+    ensureCollectionOwner();
+
+    const mode = collectionViewMode;
+    const words = getCollectibleWords(mode);
+    const bucket = collectionData[mode] || {};
+    const fullDict = getDictionaryByMode(mode) || [];
+
+    document.querySelectorAll('#collection-tabs button').forEach(button => {
+        button.classList.toggle('active', button.dataset.mode === mode);
+    });
+
+    document.querySelectorAll('#collection-filter button').forEach(button => {
+        const active = button.dataset.filter === collectionFilter;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+
+    const got = words.filter(word => bucket[word]).length;
+    const total = words.length;
+    const percent = total > 0 ? Math.floor((got / total) * 100) : 0;
+
+    document.getElementById('collection-progress').textContent =
+        total === 0
+            ? '図鑑を読み込み中です…'
+            : `${getShortModeName(mode)} ${got} / ${total}（${percent}%）` +
+              (got === total ? ' 🎉 コンプリート！' : '');
+
+    document.getElementById('collection-bar-fill').style.width = `${percent}%`;
+
+    const omitted = new Set(fullDict).size - total;
+    let note = omitted > 0
+        ? `※盤面は5文字までなので、6文字以上の${omitted}件は図鑑の対象外です。`
+        : '';
+
+    if (!isLoggedIn()) {
+        note += ' ゲストの図鑑はこの端末だけに保存されます。ログインするとアカウントに保存されます（ゲスト中の記録は引き継がれません）。';
+    }
+
+    document.getElementById('collection-note').textContent = note.trim();
+
+    const dexNumbers = new Map();
+
+    if (mode === 'pokemon') {
+        fullDict.forEach((word, index) => {
+            if (!dexNumbers.has(word)) dexNumbers.set(word, index + 1);
+        });
+    }
+
+    let html = '';
+
+    for (const word of words) {
+        const entry = bucket[word];
+
+        if (collectionFilter === 'got' && !entry) continue;
+        if (collectionFilter === 'missing' && entry) continue;
+
+        const number = dexNumbers.has(word)
+            ? `<span class="collection-no">No.${String(dexNumbers.get(word)).padStart(4, '0')}</span>`
+            : '';
+
+        if (entry) {
+            html += `<button type="button" class="collection-item got" data-word="${escapeHtml(word)}">${number}<span class="collection-word">${escapeHtml(word)}</span></button>`;
+        } else {
+            html += `<div class="collection-item missing">${number}<span class="collection-word">${'？'.repeat([...word].length)}</span></div>`;
+        }
+    }
+
+    document.getElementById('collection-grid').innerHTML =
+        html || '<div class="puzzle-list-empty">該当するワードはありません。</div>';
+
+    prefetchFacts(mode);
+}
+
+async function openCollectionScreen() {
+    showScreen('collection');
+    collectionViewMode = 'country';
+    collectionFilter = 'all';
+    document.getElementById('collection-detail').hidden = true;
+    renderCollection();
+
+    if (isLoggedIn()) {
+        const ok = await refreshCollectionFromServer();
+
+        if (ok && screens.collection.style.display === 'block') {
+            renderCollection();
+            updateCollectionSummary();
+        }
+    }
+}
+
+document.getElementById('btn-collection').addEventListener('click', openCollectionScreen);
+
+document.getElementById('btn-collection-back').addEventListener('click', () => {
+    showScreen('home');
+});
+
+document.getElementById('collection-tabs').addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-mode]');
+
+    if (!button) return;
+
+    collectionViewMode = button.dataset.mode;
+    document.getElementById('collection-detail').hidden = true;
+    renderCollection();
+});
+
+document.getElementById('collection-filter').addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-filter]');
+
+    if (!button) return;
+
+    collectionFilter = button.dataset.filter;
+    renderCollection();
+});
+
+document.getElementById('collection-grid').addEventListener('click', (event) => {
+    const item = event.target.closest('.collection-item.got');
+
+    if (!item) return;
+
+    const word = item.dataset.word;
+    const entry = (collectionData[collectionViewMode] || {})[word];
+    const fact = getFactFor(collectionViewMode, word);
+    const detail = document.getElementById('collection-detail');
+
+    detail.textContent =
+        `${word}：${fact ? `${fact} ` : ''}（${entry ? entry.count : 1}回消した）`;
+    detail.hidden = false;
+});
+
+// ---------- 問題の統計（遊ばれた回数・クリア）----------
+function pingPuzzle(kind, puzzleId) {
+    if (!puzzleId) return;
+
+    try {
+        fetch(`${API_BASE_URL}/puzzles/${Number(puzzleId)}/${kind}`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            keepalive: true,
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}'
+        }).catch(() => {});
+    } catch {
+        // 統計の記録に失敗してもゲームには影響させない
+    }
+}
+
+// ---------- 問題の共有リンク・いいね ----------
+function puzzleUrl(mode, puzzleId) {
+    return `${location.origin}/p/${mode}/${Number(puzzleId)}`;
+}
+
+function getPuzzleNumber(mode, puzzleId) {
+    const sorted = [...(allPuzzles[mode]?.puzzles || [])].sort(
+        (a, b) => Number(a.id) - Number(b.id)
+    );
+    const index = sorted.findIndex(p => Number(p.id) === Number(puzzleId));
+
+    return index >= 0 ? index + 1 : null;
+}
+
+function buildPuzzleShareText(mode, puzzleId) {
+    const number = getPuzzleNumber(mode, puzzleId);
+
+    return `「${getModeName(mode)}」${number ? `第${number}問` : `問題#${puzzleId}`} この問題、解ける？ #国名ケシマス`;
+}
+
+function getPuzzleRecord(mode, puzzleId) {
+    return (allPuzzles[mode]?.puzzles || []).find(
+        p => Number(p.id) === Number(puzzleId)
+    ) || null;
+}
+
+function isPuzzleLiked(mode, puzzleId) {
+    return (allPuzzles[mode]?.liked_ids || [])
+        .map(Number)
+        .includes(Number(puzzleId));
+}
+
+function canLikePuzzle(mode, puzzleId) {
+    const puzzle = getPuzzleRecord(mode, puzzleId);
+
+    return Boolean(isLoggedIn() && puzzle && !puzzle.is_mine);
+}
+
+async function setPuzzleLike(mode, puzzleId, liked) {
+    try {
+        const response = await fetchWithRetry(
+            `${API_BASE_URL}/puzzles/${Number(puzzleId)}/like`,
+            {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json'
+                },
+                body: JSON.stringify({ liked })
+            }
+        );
+
+        const data = await response.json().catch(() => null);
+
+        if (!response.ok) {
+            showToast(data?.message || 'いいねできませんでした。');
+            return null;
+        }
+
+        const ids = new Set((allPuzzles[mode].liked_ids || []).map(Number));
+
+        if (data.liked) ids.add(Number(puzzleId)); else ids.delete(Number(puzzleId));
+
+        allPuzzles[mode].liked_ids = [...ids];
+
+        const record = getPuzzleRecord(mode, puzzleId);
+
+        if (record) record.like_count = data.like_count;
+
+        return data;
+    } catch {
+        showToast('ネットワークエラーでいいねできませんでした。');
+        return null;
+    }
+}
+
+function buildLikeRow(mode, puzzleId) {
+    if (!canLikePuzzle(mode, puzzleId)) return null;
+
+    const row = document.createElement('div');
+    row.className = 'clear-like-row';
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'like-btn';
+
+    const render = () => {
+        const liked = isPuzzleLiked(mode, puzzleId);
+        const count = Number(getPuzzleRecord(mode, puzzleId)?.like_count) || 0;
+
+        button.textContent = liked
+            ? `♥ いいね済み（${count}）`
+            : `♡ この問題にいいね（${count}）`;
+        button.classList.toggle('liked', liked);
+        button.setAttribute('aria-pressed', liked ? 'true' : 'false');
+    };
+
+    button.addEventListener('click', async () => {
+        button.disabled = true;
+        await setPuzzleLike(mode, puzzleId, !isPuzzleLiked(mode, puzzleId));
+        render();
+        button.disabled = false;
+    });
+
+    render();
+    row.appendChild(button);
+
+    return row;
+}
+
+function updateShareButton() {
+    const button = document.getElementById('btn-share-puzzle');
+
+    if (button) {
+        button.hidden = isCreationPlay || !currentPuzzleId;
+    }
+}
+
+document.getElementById('btn-share-puzzle').addEventListener('click', () => {
+    if (currentPuzzleId) {
+        shareResult(
+            buildPuzzleShareText(currentMode, currentPuzzleId),
+            puzzleUrl(currentMode, currentPuzzleId)
+        );
+    }
+});
+
+async function showPuzzleRegisteredModal(mode, puzzleId) {
+    return openModal({
+        title: '🎉 問題を登録しました',
+        message: 'SNSで「この問題、解ける？」と友だちに共有しよう！',
+        buttons: [
+            {
+                label: 'この問題を共有する',
+                action: () => shareResult(
+                    buildPuzzleShareText(mode, puzzleId),
+                    puzzleUrl(mode, puzzleId)
+                )
+            },
+            { label: '閉じる', value: 'ok', secondary: true }
+        ],
+        cancelValue: 'ok'
+    });
+}
+
+// ---------- 自作問題の統計 ----------
+function formatClearRate(plays, clears) {
+    if (!plays) return '-';
+
+    return `${Math.min(100, Math.round((clears / plays) * 100))}%`;
+}
+
+async function openMyPuzzles() {
+    if (!isLoggedIn()) {
+        showToast('自作問題の統計を見るには、ログインしてください。');
+        return;
+    }
+
+    const container = document.getElementById('my-puzzles-container');
+    const summary = document.getElementById('my-puzzles-summary');
+
+    summary.textContent = '';
+    container.innerHTML = '<div class="puzzle-list-empty">読み込み中…</div>';
+    showScreen('myPuzzles');
+
+    try {
+        const response = await fetchWithRetry(`${API_BASE_URL}/my/puzzles`, {
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json' }
+        });
+
+        if (!response.ok) throw new Error(String(response.status));
+
+        const { puzzles } = await response.json();
+
+        if (!puzzles || puzzles.length === 0) {
+            container.innerHTML =
+                '<div class="puzzle-list-empty">まだ問題を作っていません。「問題を作る」から投稿すると、ここに統計が表示されます。</div>';
+            return;
+        }
+
+        const totalPlays = puzzles.reduce((sum, p) => sum + Number(p.plays), 0);
+        const totalClears = puzzles.reduce((sum, p) => sum + Number(p.clears), 0);
+        const totalLikes = puzzles.reduce((sum, p) => sum + Number(p.like_count), 0);
+
+        summary.textContent =
+            `${puzzles.length}問 ／ 遊ばれた回数 ${totalPlays}回 ／ ` +
+            `クリア率 ${formatClearRate(totalPlays, totalClears)} ／ ♥ ${totalLikes}`;
+
+        container.innerHTML = puzzles.map(p => {
+            const number = getPuzzleNumber(p.mode, p.id);
+
+            return `
+                <div class="puzzle-card cleared">
+                    <div class="puzzle-card-header">
+                        <div class="puzzle-number">${escapeHtml(getModeName(p.mode))} ${number ? `第 ${number} 問` : `#${Number(p.id)}`}</div>
+                        <div class="puzzle-status cleared">♥ ${Number(p.like_count)}</div>
+                    </div>
+                    <div class="puzzle-meta">
+                        <div class="puzzle-meta-label">遊ばれた回数</div>
+                        <div class="puzzle-meta-value">${Number(p.plays)}回</div>
+                        <div class="puzzle-meta-label">クリア率</div>
+                        <div class="puzzle-meta-value">${formatClearRate(Number(p.plays), Number(p.clears))}（${Math.min(Number(p.clears), Number(p.plays))}/${Number(p.plays)}）</div>
+                    </div>
+                    <div class="puzzle-card-actions">
+                        <button type="button" class="puzzle-share-btn" data-action="my-open" data-mode="${escapeHtml(p.mode)}" data-id="${Number(p.id)}">開く</button>
+                        <button type="button" class="puzzle-share-btn" data-action="my-share" data-mode="${escapeHtml(p.mode)}" data-id="${Number(p.id)}">共有</button>
+                    </div>
+                </div>`;
+        }).join('') +
+            '<p class="collection-note">※あなた自身のプレイは集計に含みません。ゲストのプレイは含みます。回数は端末からの自己申告です。</p>';
+    } catch {
+        container.innerHTML =
+            '<div class="puzzle-list-empty">統計を読み込めませんでした。時間を空けて再試行してください。</div>';
+    }
+}
+
+document.getElementById('btn-my-puzzles').addEventListener('click', openMyPuzzles);
+
+document.getElementById('btn-my-puzzles-back').addEventListener('click', () => {
+    showScreen('home');
+});
+
+document.getElementById('my-puzzles-container').addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-action]');
+
+    if (!button) return;
+
+    const mode = button.dataset.mode;
+    const id = Number(button.dataset.id);
+
+    if (button.dataset.action === 'my-open') {
+        startPuzzleById(mode, id);
+    } else if (button.dataset.action === 'my-share') {
+        shareResult(buildPuzzleShareText(mode, id), puzzleUrl(mode, id));
+    }
+});
+
+// ---------- 問題一覧: 並び替え・いいね・共有 ----------
+document.getElementById('puzzle-sort').addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-sort]');
+
+    if (!button || !currentListMode) return;
+
+    puzzleListSort = button.dataset.sort;
+    showPuzzleListByMode(currentListMode);
+});
+
+document.getElementById('puzzle-list-container').addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-action]');
+
+    if (!button) return;
+
+    const mode = currentListMode;
+    const id = Number(button.dataset.id);
+
+    if (button.dataset.action === 'share') {
+        shareResult(buildPuzzleShareText(mode, id), puzzleUrl(mode, id));
+    } else if (button.dataset.action === 'like') {
+        button.disabled = true;
+
+        const result = await setPuzzleLike(mode, id, !isPuzzleLiked(mode, id));
+
+        if (result) {
+            showPuzzleListByMode(mode);
+        } else {
+            button.disabled = false;
+        }
+    }
+});
+
+// ---------- 問題の直接リンク（/p/:mode/:id）----------
+let pendingDeepLink = (() => {
+    const match = location.pathname.match(/^\/p\/(country|capital|pokemon)\/(\d{1,9})\/?$/);
+
+    return match ? { mode: match[1], id: Number(match[2]) } : null;
+})();
+let deepLinkHintShown = false;
+
+function consumePendingDeepLink() {
+    if (!pendingDeepLink) return false;
+
+    const { mode, id } = pendingDeepLink;
+
+    pendingDeepLink = null;
+
+    try {
+        history.replaceState(null, '', '/');
+    } catch {
+        // URLを戻せなくても問題はない
+    }
+
+    startPuzzleById(mode, id);
+
+    return true;
+}
 
 // ----------------------------------------------------
 // 7. 初期化

@@ -6,7 +6,18 @@
     <meta name="color-scheme" content="dark">
     <meta name="theme-color" content="#1c1c1c">
     <title>国名ケシマス</title>
-    <link rel="stylesheet" href="style.css">
+    <meta name="description" content="カタカナの盤面を縦横になぞって、国名・首都名・ポケモン名を消していくパズルゲーム。">
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="国名ケシマス">
+    <meta property="og:title" content="国名ケシマス">
+    <meta property="og:description" content="カタカナの盤面をなぞって、国名・首都名・ポケモン名を消していくパズルゲーム。">
+    <meta property="og:image" content="https://kokumei-keshimasu.onrender.com/icon-512.png">
+    <meta name="twitter:card" content="summary">
+    <link rel="stylesheet" href="/style.css">
 </head>
 <body>
     <main id="app-container">
@@ -94,6 +105,15 @@
                 </div>
 
                 <div class="mode-card">
+                    <button id="btn-collection">図鑑</button>
+                    <span id="collection-summary" class="problem-count-display">集めたワード: -</span>
+                </div>
+
+                <div class="mode-card">
+                    <button id="btn-my-puzzles">自作問題の統計</button>
+                </div>
+
+                <div class="mode-card">
                     <button id="btn-ranking">ランキング</button>
                 </div>
             </div>
@@ -136,6 +156,10 @@
                 <button type="button" data-filter="unsolved" aria-pressed="false">未クリア</button>
                 <button type="button" data-filter="cleared" aria-pressed="false">クリア済</button>
             </div>
+            <div id="puzzle-sort" role="group" aria-label="並び順">
+                <button type="button" data-sort="id" class="active" aria-pressed="true">番号順</button>
+                <button type="button" data-sort="popular" aria-pressed="false">♥ 人気順</button>
+            </div>
             <p id="puzzle-progress" role="status"></p>
 
             <div id="puzzle-list-container">
@@ -170,6 +194,7 @@
 
             <div class="status-panel">
                 <p>使用済みワード: <span id="used-words-display">なし</span></p>
+                <button id="btn-share-puzzle" class="secondary-btn" hidden>この問題を共有</button>
                 <button id="btn-back-to-home" class="secondary-btn">ホームに戻る</button>
             </div>
         </div>
@@ -199,6 +224,45 @@
             </div>
 
             <button id="btn-create-back" class="secondary-btn">
+                ホームに戻る
+            </button>
+        </div>
+
+        <!-- 図鑑画面 -->
+        <div id="collection-screen" class="screen" style="display:none;">
+            <h2>図鑑</h2>
+
+            <div id="collection-tabs" role="group" aria-label="図鑑の種類">
+                <button type="button" data-mode="country" class="active">国名</button>
+                <button type="button" data-mode="capital">首都名</button>
+                <button type="button" data-mode="pokemon">ポケモン</button>
+            </div>
+
+            <p id="collection-progress" class="collection-progress" role="status"></p>
+            <div class="collection-bar" aria-hidden="true"><div id="collection-bar-fill"></div></div>
+            <p id="collection-note" class="collection-note"></p>
+
+            <div id="collection-filter" role="group" aria-label="表示の絞り込み">
+                <button type="button" data-filter="all" class="active" aria-pressed="true">すべて</button>
+                <button type="button" data-filter="got" aria-pressed="false">集めた</button>
+                <button type="button" data-filter="missing" aria-pressed="false">まだ</button>
+            </div>
+
+            <p id="collection-detail" class="clear-word-detail" role="status" hidden></p>
+
+            <div id="collection-grid" class="collection-grid"></div>
+
+            <button id="btn-collection-back" class="secondary-btn" style="margin-top: 20px;">
+                ホームに戻る
+            </button>
+        </div>
+
+        <!-- 自作問題の統計画面 -->
+        <div id="my-puzzles-screen" class="screen" style="display:none;">
+            <h2>自作問題の統計</h2>
+            <p id="my-puzzles-summary" class="my-puzzles-summary" role="status"></p>
+            <div id="my-puzzles-container"></div>
+            <button id="btn-my-puzzles-back" class="secondary-btn" style="margin-top: 20px;">
                 ホームに戻る
             </button>
         </div>
@@ -250,6 +314,6 @@
         </div>
     </main>
 
-    <script src="script.js"></script>
+    <script src="/script.js"></script>
 </body>
 </html>

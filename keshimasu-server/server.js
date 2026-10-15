@@ -230,11 +230,19 @@ async function fetchPuzzleList(mode) {
             p.mode,
             p.data,
             p.creator,
+            p.creator_id,
             p.created_at,
-            COALESCE(c.clear_count, 0) AS clear_count
+            COALESCE(c.clear_count, 0) AS clear_count,
+            COALESCE(lk.like_count, 0) AS like_count
         FROM puzzles p
         LEFT JOIN clear_counts c
             ON c.puzzle_id = p.id
+        LEFT JOIN (
+            SELECT puzzle_id, COUNT(*)::integer AS like_count
+            FROM puzzle_likes
+            GROUP BY puzzle_id
+        ) lk
+            ON lk.puzzle_id = p.id
         WHERE p.mode = $1
         ORDER BY p.id ASC;
         `,
@@ -458,7 +466,10 @@ async function warnIfSchemaMissing() {
                 to_regclass('public.players') AS players,
                 to_regclass('public.puzzles') AS puzzles,
                 to_regclass('public.player_sessions') AS player_sessions,
-                to_regclass('public.clear_events') AS clear_events;
+                to_regclass('public.clear_events') AS clear_events,
+                to_regclass('public.player_words') AS player_words,
+                to_regclass('public.puzzle_stats') AS puzzle_stats,
+                to_regclass('public.puzzle_likes') AS puzzle_likes;
         `);
 
         const missing = Object.entries(result.rows[0])
@@ -609,7 +620,13 @@ app.get('/api', (req, res) => {
             'POST /api/player/logout',
             'GET /api/player/me',
             'POST /api/puzzles',
-            'POST /api/score/update'
+            'POST /api/score/update',
+            'GET /api/collection',
+            'POST /api/collection/collect',
+            'POST /api/puzzles/:id/play',
+            'POST /api/puzzles/:id/complete',
+            'POST /api/puzzles/:id/like',
+            'GET /api/my/puzzles'
         ]
     });
 });
@@ -1007,9 +1024,34 @@ const clearedIds = player
 
 const playerIdentified = Boolean(player);
 
+        let likedIds = [];
+
+        if (player) {
+            const likedResult = await db.query(
+                `
+                SELECT pl.puzzle_id
+                FROM puzzle_likes pl
+                INNER JOIN puzzles p ON p.id = pl.puzzle_id
+                WHERE pl.player_id = $1 AND p.mode = $2;
+                `,
+                [player.id, mode]
+            );
+
+            likedIds = likedResult.rows.map(row => row.puzzle_id);
+        }
+
+        // creator_id は他人に見せず、「自分の問題か」だけを返す
+        const publicPuzzles = puzzles.map(
+            ({ creator_id: creatorId, ...rest }) => ({
+                ...rest,
+                is_mine: Boolean(player && creatorId && creatorId === player.id)
+            })
+        );
+
         return res.json({
-            puzzles,
+            puzzles: publicPuzzles,
             cleared_ids: clearedIds,
+            liked_ids: likedIds,
             player_identified: playerIdentified
         });
 
@@ -1080,9 +1122,10 @@ app.post(
                 INSERT INTO puzzles (
                     mode,
                     data,
-                    creator
+                    creator,
+                    creator_id
                 )
-                VALUES ($1, $2::jsonb, $3)
+                VALUES ($1, $2::jsonb, $3, $4)
                 RETURNING
                     id,
                     mode,
@@ -1093,7 +1136,8 @@ app.post(
                 [
                     mode,
                     JSON.stringify(normalizedBoardData),
-                    req.auth.nickname
+                    req.auth.nickname,
+                    req.auth.playerId
                 ]
             );
 
@@ -1303,6 +1347,395 @@ app.post(
         }
     }
 );
+// ------------------------------
+// 図鑑（コレクション）
+// 盤面は縦に見えるのが5段のため、消せる単語は5文字以下だけ。
+// 図鑑の分母は「5文字以下の単語」の数にする（長い単語は絶対に消せないため）。
+// ------------------------------
+const MAX_ERASABLE_LENGTH = 5;
+
+const COLLECTIBLE_WORDS = {};
+const ALL_WORD_COUNTS = {};
+
+for (const mode of VALID_MODES) {
+    const list = WORD_LISTS[mode];
+
+    ALL_WORD_COUNTS[mode] = new Set(list).size;
+
+    COLLECTIBLE_WORDS[mode] = new Set(
+        list.filter(word => [...word].length <= MAX_ERASABLE_LENGTH)
+    );
+}
+
+const MODE_ORDER_INDEX = {};
+
+for (const mode of VALID_MODES) {
+    // ポケモンは全国図鑑番号順（pokemon_words.json の並び順）で返す
+    MODE_ORDER_INDEX[mode] = new Map(
+        WORD_LISTS[mode].map((word, index) => [word, index])
+    );
+}
+
+const collectLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 30,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: {
+        message: '図鑑の更新が多すぎます。少し待ってから再試行してください。'
+    }
+});
+
+const statsLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 60,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: {
+        message: 'リクエストが多すぎます。少し待ってから再試行してください。'
+    }
+});
+
+// GET /api/collection … 自分の図鑑
+app.get('/api/collection', requireAuth, async (req, res) => {
+    try {
+        const result = await db.query(
+            `
+            SELECT mode, word, erase_count, first_collected_at
+            FROM player_words
+            WHERE player_id = $1;
+            `,
+            [req.auth.playerId]
+        );
+
+        const modes = {};
+
+        for (const mode of VALID_MODES) {
+            modes[mode] = {
+                total: COLLECTIBLE_WORDS[mode].size,
+                all_total: ALL_WORD_COUNTS[mode],
+                words: []
+            };
+        }
+
+        for (const row of result.rows) {
+            if (!modes[row.mode]) continue;
+            if (!COLLECTIBLE_WORDS[row.mode].has(row.word)) continue;
+
+            modes[row.mode].words.push({
+                word: row.word,
+                count: row.erase_count,
+                at: row.first_collected_at
+            });
+        }
+
+        for (const mode of VALID_MODES) {
+            const order = MODE_ORDER_INDEX[mode];
+
+            modes[mode].words.sort(
+                (a, b) => order.get(a.word) - order.get(b.word)
+            );
+            modes[mode].collected = modes[mode].words.length;
+        }
+
+        return res.json({ modes });
+    } catch (error) {
+        console.error('図鑑の取得に失敗しました。', {
+            name: error.name,
+            code: error.code
+        });
+
+        return res.status(500).json({
+            message: '図鑑の取得に失敗しました。'
+        });
+    }
+});
+
+// POST /api/collection/collect  body: { items: [{ mode, word }, ...] }
+// 辞書にある5文字以下の単語だけを受け付け、新しく集めた単語を返す。
+// ※消した単語はクライアントからの自己申告（スコアと同様、厳密な検証はしない）
+app.post(
+    '/api/collection/collect',
+    requireAuth,
+    collectLimiter,
+    async (req, res) => {
+        const items = Array.isArray(req.body?.items)
+            ? req.body.items.slice(0, 200)
+            : null;
+
+        if (!items) {
+            return res.status(400).json({ message: 'itemsが不正です。' });
+        }
+
+        const counts = {};
+
+        for (const mode of VALID_MODES) {
+            counts[mode] = new Map();
+        }
+
+        for (const item of items) {
+            if (
+                !item ||
+                !isValidMode(item.mode) ||
+                typeof item.word !== 'string' ||
+                !COLLECTIBLE_WORDS[item.mode].has(item.word)
+            ) {
+                continue;
+            }
+
+            const map = counts[item.mode];
+            map.set(item.word, (map.get(item.word) || 0) + 1);
+        }
+
+        try {
+            const newlyCollected = [];
+
+            for (const mode of VALID_MODES) {
+                const map = counts[mode];
+
+                if (map.size === 0) continue;
+
+                const result = await db.query(
+                    `
+                    INSERT INTO player_words (player_id, mode, word, erase_count)
+                    SELECT $1, $2, t.word, t.cnt
+                    FROM unnest($3::text[], $4::int[]) AS t(word, cnt)
+                    ON CONFLICT (player_id, mode, word) DO UPDATE
+                    SET erase_count = player_words.erase_count + EXCLUDED.erase_count,
+                        last_collected_at = NOW()
+                    RETURNING word, (xmax = 0) AS inserted;
+                    `,
+                    [
+                        req.auth.playerId,
+                        mode,
+                        [...map.keys()],
+                        [...map.values()]
+                    ]
+                );
+
+                for (const row of result.rows) {
+                    if (row.inserted) {
+                        newlyCollected.push({ mode, word: row.word });
+                    }
+                }
+            }
+
+            return res.json({ newlyCollected });
+        } catch (error) {
+            console.error('図鑑の更新に失敗しました。', {
+                name: error.name,
+                code: error.code
+            });
+
+            return res.status(500).json({
+                message: '図鑑の更新に失敗しました。'
+            });
+        }
+    }
+);
+
+// ------------------------------
+// 問題の統計（遊ばれた回数・クリア率）といいね
+// ------------------------------
+function parsePuzzleId(value) {
+    const id = Number(value);
+
+    return Number.isSafeInteger(id) && id > 0 && id <= 2147483647
+        ? id
+        : null;
+}
+
+async function findPuzzle(puzzleId) {
+    const result = await db.query(
+        `SELECT id, mode, creator_id FROM puzzles WHERE id = $1 LIMIT 1;`,
+        [puzzleId]
+    );
+
+    return result.rows[0] || null;
+}
+
+// 遊び始め／クリアの記録（ゲストも対象。作問者本人のプレイは数えない）
+function createStatsHandler(column) {
+    return async (req, res) => {
+        const puzzleId = parsePuzzleId(req.params.id);
+
+        if (!puzzleId) {
+            return res.status(400).json({ message: 'puzzleIdが不正です。' });
+        }
+
+        try {
+            const puzzle = await findPuzzle(puzzleId);
+
+            if (!puzzle) {
+                return res.status(404).json({
+                    message: '指定された問題が見つかりません。'
+                });
+            }
+
+            if (
+                req.auth &&
+                puzzle.creator_id &&
+                puzzle.creator_id === req.auth.playerId
+            ) {
+                return res.json({ counted: false });
+            }
+
+            await db.query(
+                `
+                INSERT INTO puzzle_stats (puzzle_id, ${column})
+                VALUES ($1, 1)
+                ON CONFLICT (puzzle_id) DO UPDATE
+                SET ${column} = puzzle_stats.${column} + 1;
+                `,
+                [puzzleId]
+            );
+
+            return res.json({ counted: true });
+        } catch (error) {
+            console.error('問題の統計の記録に失敗しました。', {
+                name: error.name,
+                code: error.code
+            });
+
+            return res.status(500).json({
+                message: '統計の記録に失敗しました。'
+            });
+        }
+    };
+}
+
+app.post(
+    '/api/puzzles/:id/play',
+    optionalAuth,
+    statsLimiter,
+    createStatsHandler('plays')
+);
+
+app.post(
+    '/api/puzzles/:id/complete',
+    optionalAuth,
+    statsLimiter,
+    createStatsHandler('clears')
+);
+
+// POST /api/puzzles/:id/like  body: { liked: true | false }
+// ログイン済みで、その問題をクリアした人だけが、自作以外の問題にいいねできる。
+app.post(
+    '/api/puzzles/:id/like',
+    requireAuth,
+    statsLimiter,
+    async (req, res) => {
+        const puzzleId = parsePuzzleId(req.params.id);
+
+        if (!puzzleId || typeof req.body?.liked !== 'boolean') {
+            return res.status(400).json({ message: 'リクエストが不正です。' });
+        }
+
+        try {
+            const puzzle = await findPuzzle(puzzleId);
+
+            if (!puzzle) {
+                return res.status(404).json({
+                    message: '指定された問題が見つかりません。'
+                });
+            }
+
+            const playerId = req.auth.playerId;
+
+            if (puzzle.creator_id === playerId) {
+                return res.status(403).json({
+                    message: '自分の問題にはいいねできません。'
+                });
+            }
+
+            if (req.body.liked) {
+                const cleared = (
+                    req.auth.player[getClearedColumn(puzzle.mode)] || []
+                ).map(Number);
+
+                if (!cleared.includes(puzzleId)) {
+                    return res.status(403).json({
+                        message: 'クリアした問題にいいねできます。'
+                    });
+                }
+
+                await db.query(
+                    `
+                    INSERT INTO puzzle_likes (puzzle_id, player_id)
+                    VALUES ($1, $2)
+                    ON CONFLICT DO NOTHING;
+                    `,
+                    [puzzleId, playerId]
+                );
+            } else {
+                await db.query(
+                    `DELETE FROM puzzle_likes WHERE puzzle_id = $1 AND player_id = $2;`,
+                    [puzzleId, playerId]
+                );
+            }
+
+            const countResult = await db.query(
+                `SELECT COUNT(*)::integer AS like_count FROM puzzle_likes WHERE puzzle_id = $1;`,
+                [puzzleId]
+            );
+
+            invalidatePuzzleListCache(puzzle.mode);
+
+            return res.json({
+                liked: req.body.liked,
+                like_count: countResult.rows[0].like_count
+            });
+        } catch (error) {
+            console.error('いいねの更新に失敗しました。', {
+                name: error.name,
+                code: error.code
+            });
+
+            return res.status(500).json({
+                message: 'いいねの更新に失敗しました。'
+            });
+        }
+    }
+);
+
+// GET /api/my/puzzles … 自分が作った問題と、その統計
+app.get('/api/my/puzzles', requireAuth, async (req, res) => {
+    try {
+        const result = await db.query(
+            `
+            SELECT
+                p.id,
+                p.mode,
+                p.created_at,
+                COALESCE(s.plays, 0) AS plays,
+                COALESCE(s.clears, 0) AS clears,
+                (
+                    SELECT COUNT(*)::integer
+                    FROM puzzle_likes l
+                    WHERE l.puzzle_id = p.id
+                ) AS like_count
+            FROM puzzles p
+            LEFT JOIN puzzle_stats s ON s.puzzle_id = p.id
+            WHERE p.creator_id = $1
+            ORDER BY p.id DESC
+            LIMIT 200;
+            `,
+            [req.auth.playerId]
+        );
+
+        return res.json({ puzzles: result.rows });
+    } catch (error) {
+        console.error('作成した問題の取得に失敗しました。', {
+            name: error.name,
+            code: error.code
+        });
+
+        return res.status(500).json({
+            message: '作成した問題の取得に失敗しました。'
+        });
+    }
+});
+
 // ------------------------------
 // ランキング取得
 // GET /api/rankings/total
@@ -1535,6 +1968,95 @@ app.get('/api/rankings/:type/me', requireAuth, async (req, res) => {
             message: '順位の取得中にエラーが発生しました。'
         });
     }
+});
+
+// ------------------------------
+// 問題ごとの直接リンク  /p/:mode/:id
+// SNSのクローラーはJavaScriptを実行しないため、
+// index.html にOGPタグ（タイトル・説明・画像）をサーバー側で埋め込んで返す。
+// ゲーム画面側は location.pathname を見て、その問題を直接開く。
+// ------------------------------
+const MODE_LABELS = {
+    country: '国名',
+    capital: '首都名',
+    pokemon: 'ポケモン'
+};
+
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+app.get('/p/:mode/:id', async (req, res, next) => {
+    const { mode } = req.params;
+    const puzzleId = parsePuzzleId(req.params.id);
+
+    if (!isValidMode(mode) || !puzzleId) {
+        return next();
+    }
+
+    let html;
+
+    try {
+        html = await fs.promises.readFile(
+            path.join(PUBLIC_DIR, 'index.html'),
+            'utf8'
+        );
+    } catch {
+        return next();
+    }
+
+    let creator = '';
+
+    try {
+        const result = await db.query(
+            `SELECT creator FROM puzzles WHERE id = $1 AND mode = $2 LIMIT 1;`,
+            [puzzleId, mode]
+        );
+
+        if (result.rows.length === 0) {
+            return next();
+        }
+
+        creator = result.rows[0].creator || '';
+    } catch {
+        // DBに繋がらなくても、ゲーム画面そのものは返す
+    }
+
+    const origin = `${req.protocol}://${req.get('host')}`;
+    const pageUrl = `${origin}/p/${mode}/${puzzleId}`;
+    const label = MODE_LABELS[mode];
+    const title = `${label}ケシマス 問題#${puzzleId} この問題、解ける？`;
+    const description = creator
+        ? `${creator}さんが作った問題に挑戦！ 全部消せるかな？`
+        : '全部消せるかな？ 挑戦してみよう！';
+
+    const tags = [
+        `<meta property="og:type" content="website">`,
+        `<meta property="og:site_name" content="国名ケシマス">`,
+        `<meta property="og:title" content="${escapeHtml(title)}">`,
+        `<meta property="og:description" content="${escapeHtml(description)}">`,
+        `<meta property="og:url" content="${escapeHtml(pageUrl)}">`,
+        `<meta property="og:image" content="${origin}/icon-512.png">`,
+        `<meta name="twitter:card" content="summary">`,
+        `<meta name="twitter:title" content="${escapeHtml(title)}">`,
+        `<meta name="twitter:description" content="${escapeHtml(description)}">`,
+        `<meta name="twitter:image" content="${origin}/icon-512.png">`
+    ].join('\n    ');
+
+    // 既存のog:タグ（トップ用）は取り除いてから、この問題用のタグを差し込む
+    html = html
+        .replace(/<meta\s+(?:property="og:[^"]*"|name="twitter:[^"]*")[^>]*>\s*/g, '')
+        .replace(/<title>[\s\S]*?<\/title>/, `<title>${escapeHtml(title)}</title>`)
+        .replace('</head>', `    ${tags}\n</head>`);
+
+    res.set('Cache-Control', 'no-cache');
+
+    return res.type('html').send(html);
 });
 
 // ------------------------------

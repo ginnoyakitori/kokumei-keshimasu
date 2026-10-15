@@ -569,6 +569,79 @@ async function initializeClearEventsTable() {
 }
 
 // ------------------------------
+// 図鑑・問題の統計・いいね
+//  player_words  : プレイヤーが消したワード（図鑑）
+//  puzzle_stats  : 問題ごとの「遊ばれた回数」「クリア回数」
+//  puzzle_likes  : 問題へのいいね（1人1問1回）
+//  puzzles.creator_id : 作問者のID（統計を作問者本人だけに見せるため）
+// ------------------------------
+async function initializeCollectionTables() {
+    await db.query(`
+        CREATE TABLE IF NOT EXISTS player_words (
+            player_id INTEGER NOT NULL
+                REFERENCES players(id) ON DELETE CASCADE,
+            mode VARCHAR(20) NOT NULL,
+            word TEXT NOT NULL,
+            erase_count INTEGER NOT NULL DEFAULT 1,
+            first_collected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            last_collected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (player_id, mode, word)
+        );
+    `);
+
+    await db.query(`
+        CREATE TABLE IF NOT EXISTS puzzle_stats (
+            puzzle_id INTEGER PRIMARY KEY
+                REFERENCES puzzles(id) ON DELETE CASCADE,
+            plays INTEGER NOT NULL DEFAULT 0,
+            clears INTEGER NOT NULL DEFAULT 0
+        );
+    `);
+
+    await db.query(`
+        CREATE TABLE IF NOT EXISTS puzzle_likes (
+            puzzle_id INTEGER NOT NULL
+                REFERENCES puzzles(id) ON DELETE CASCADE,
+            player_id INTEGER NOT NULL
+                REFERENCES players(id) ON DELETE CASCADE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (puzzle_id, player_id)
+        );
+    `);
+
+    await db.query(`
+        CREATE INDEX IF NOT EXISTS idx_puzzle_likes_player_id
+        ON puzzle_likes(player_id);
+    `);
+
+    await db.query(`
+        ALTER TABLE puzzles
+        ADD COLUMN IF NOT EXISTS creator_id INTEGER
+            REFERENCES players(id) ON DELETE SET NULL;
+    `);
+
+    await db.query(`
+        CREATE INDEX IF NOT EXISTS puzzles_creator_id_idx
+        ON puzzles(creator_id);
+    `);
+
+    // 既存の投稿問題に作問者IDを補う（ニックネームが一致し、アカウント作成後に作られたもののみ）。
+    // 初期問題の作者名（銀の焼き鳥）は対象外。
+    await db.query(`
+        UPDATE puzzles
+        SET creator_id = pl.id
+        FROM players pl
+        WHERE puzzles.creator_id IS NULL
+          AND puzzles.creator IS NOT NULL
+          AND puzzles.creator <> '銀の焼き鳥'
+          AND LOWER(puzzles.creator) = LOWER(pl.nickname)
+          AND puzzles.created_at >= pl.created_at;
+    `);
+
+    console.log('✅ Collection / puzzle stats / likes tables checked.');
+}
+
+// ------------------------------
 // すべてのマイグレーションを順番に実行する
 // migrate.js（デプロイ時）から呼ばれる。
 // RUN_MIGRATIONS_ON_START=true のときはサーバー起動時にも呼ばれる。
@@ -577,11 +650,13 @@ async function runMigrations() {
     await initializeDatabase();
     await initializeSessionTable();
     await initializeClearEventsTable();
+    await initializeCollectionTables();
 }
 
 module.exports = {
     initializeDatabase,
     initializeSessionTable,
     initializeClearEventsTable,
+    initializeCollectionTables,
     runMigrations
 };
