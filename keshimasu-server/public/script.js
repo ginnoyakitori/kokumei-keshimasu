@@ -255,6 +255,12 @@ const FX = (() => {
             vibrate([30, 40, 30]);
         },
 
+        // ボタンを押した小さな「カチッ」
+        click() {
+            tone({ freq: 760, to: 540, type: 'triangle', dur: 0.06, gain: 0.07 });
+            vibrate(6);
+        },
+
         // 1手戻す・リセットの小さな音
         undo() {
             tone({ freq: 620, to: 380, type: 'triangle', dur: 0.12, gain: 0.07 });
@@ -280,6 +286,26 @@ const FX = (() => {
 })();
 
 document.addEventListener('pointerdown', () => FX.unlock(), { once: true });
+
+// すべてのボタンに共通のクリック音（専用の音があるボタンは除く）
+document.addEventListener('click', (event) => {
+    const target = event.target instanceof Element
+        ? event.target.closest('button, summary, [role="button"]')
+        : null;
+
+    if (!target || target.disabled) return;
+
+    if (
+        target.classList.contains('cell') ||
+        target.id === 'erase-button' ||
+        target.id === 'undo-button' ||
+        target.id === 'sound-toggle'
+    ) {
+        return;
+    }
+
+    FX.click();
+}, true);
 
 // 画面右上の「音のオン/オフ」ボタン
 function createSoundToggle() {
@@ -1279,9 +1305,9 @@ function handleCreatePaste(event) {
     let lastWritten = startIndex;
 
     // 使えない文字は「なかったこと」にして、次の文字を詰めて入れる。
-    // 空白・全角空白・_・□ だけは空きマスとして扱う。
+    // 空白・全角空白だけが空きマスになる（_ や □ も使えない文字として詰める）。
     const normalizeChar = (rawChar) => {
-        if (/[\s\u3000_□]/u.test(rawChar)) return '';
+        if (/[\s\u3000]/u.test(rawChar)) return '';
 
         const char = toKatakana(rawChar.normalize('NFKC')).toUpperCase();
 
@@ -3363,7 +3389,11 @@ eraseButton.addEventListener('click', async () => {
         });
 
         usedWords.push(finalWord);
-        recordCollected(currentMode, finalWord);
+        if (selectedWord.includes('F')) {
+            showToast('Fを使ったワードは図鑑に登録されません。', 'info');
+        } else {
+            recordCollected(currentMode, finalWord);
+        }
 
         pendingFall = computeFallMap(boardData);
         applyGravity();
