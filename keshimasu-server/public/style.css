@@ -2205,3 +2205,13 @@ h2, #puzzle-list-title, .modal-title, .modal.clear-modal .modal-title {
     border-color: var(--color-border);
     box-shadow: 0 3px 8px var(--shadow-color);
 }
+
+/* スマホでも絞り込み・並び順を1行に収める */
+#puzzle-filter, #puzzle-sort { flex-wrap: nowrap; gap: 6px; }
+#puzzle-filter button, #puzzle-sort button {
+    flex: 0 1 auto; white-space: nowrap; padding: 8px 12px; font-size: 0.9rem; min-width: 0;
+}
+@media (max-width: 400px) {
+    #puzzle-filter, #puzzle-sort { gap: 4px; }
+    #puzzle-filter button, #puzzle-sort button { padding: 7px 9px; font-size: 0.82rem; }
+}

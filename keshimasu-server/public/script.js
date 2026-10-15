@@ -134,8 +134,11 @@ const FX = (() => {
     }
 
     // 1つの音（周波数 freq から to へ滑らせる）
+    const VOLUME = 2.2;
+
     function tone({ freq, to, type = 'sine', start = 0, dur = 0.12, gain = 0.12 }) {
         const audio = getContext();
+        gain = Math.min(0.9, gain * VOLUME);
 
         if (!audio) return;
 
@@ -162,6 +165,7 @@ const FX = (() => {
     // 「パァン」用の短いノイズ
     function noise({ start = 0, dur = 0.12, gain = 0.1, highpass = 1800 }) {
         const audio = getContext();
+        gain = Math.min(0.9, gain * VOLUME);
 
         if (!audio) return;
 
@@ -223,7 +227,7 @@ const FX = (() => {
         tick(count = 1) {
             const freq = 480 + Math.min(count, 10) * 45;
 
-            tone({ freq, to: freq * 1.12, type: 'triangle', dur: 0.07, gain: 0.07 });
+            tone({ freq, to: freq * 1.12, type: 'triangle', dur: 0.09, gain: 0.09 });
             vibrate(8);
         },
 
@@ -1274,25 +1278,43 @@ function handleCreatePaste(event) {
     let skipped = 0;
     let lastWritten = startIndex;
 
-    const writeCell = (index, rawChar) => {
-        if (index < 0 || index >= inputs.length) return false;
-
-        lastWritten = index;
-
-        if (/[\s\u3000_□]/u.test(rawChar)) {
-            inputs[index].value = '';
-            return true;
-        }
+    // 使えない文字は「なかったこと」にして、次の文字を詰めて入れる。
+    // 空白・全角空白・_・□ だけは空きマスとして扱う。
+    const normalizeChar = (rawChar) => {
+        if (/[\s\u3000_□]/u.test(rawChar)) return '';
 
         const char = toKatakana(rawChar.normalize('NFKC')).toUpperCase();
 
-        if (isValidGameChar(char, mode)) {
-            inputs[index].value = char;
-        } else {
-            skipped++;
+        if (isValidGameChar(char, mode)) return char;
+
+        skipped++;
+        return null;
+    };
+
+    // 1行ぶんを、使える文字だけに整えた配列にする（null は除去）
+    const toCells = (line, limit) => {
+        const cells = [];
+
+        for (const rawChar of line) {
+            if (cells.length >= limit) break;
+
+            const c = normalizeChar(rawChar);
+
+            if (c !== null) cells.push(c);
         }
 
-        return true;
+        return cells;
+    };
+
+    const putCells = (firstIndex, cells) => {
+        cells.forEach((c, i) => {
+            const index = firstIndex + i;
+
+            if (index >= inputs.length) return;
+
+            inputs[index].value = c;
+            lastWritten = index;
+        });
     };
 
     const lines = text
@@ -1305,14 +1327,10 @@ function handleCreatePaste(event) {
             const row = startRow + lineIndex;
             const firstColumn = lineIndex === 0 ? startColumn : 0;
 
-            [...line].slice(0, CREATE_COLUMNS - firstColumn).forEach((char, i) => {
-                writeCell(row * CREATE_COLUMNS + firstColumn + i, char);
-            });
+            putCells(row * CREATE_COLUMNS + firstColumn, toCells(line, CREATE_COLUMNS - firstColumn));
         });
     } else {
-        [...lines[0]].forEach((char, i) => {
-            writeCell(startIndex + i, char);
-        });
+        putCells(startIndex, toCells(lines[0], inputs.length - startIndex));
     }
 
     checkCreationInput();
@@ -2512,7 +2530,7 @@ let lastFeedbackStatus = '';
 function playSelectionFeedback(count, status) {
     if (status === 'valid' && lastFeedbackStatus !== 'valid') {
         FX.valid();
-    } else if (count > lastFeedbackCount) {
+    } else if (count > lastFeedbackCount || (count === 1 && lastFeedbackStatus === '')) {
         FX.tick(count);
     }
 
@@ -3143,6 +3161,7 @@ function handleBoardPointerDown(event) {
 
     // 押した瞬間にも反応が分かるように、押したマスを色づける
     element.classList.add('pressing');
+    FX.tick(1);
 }
 
 function handleBoardPointerMove(event) {
