@@ -111,6 +111,33 @@ const FX = (() => {
         muted = false;
     }
 
+    // iPhone のマナーモード（消音スイッチ）でも WebAudio を鳴らす（iOS 16.4+）
+    try {
+        if (navigator.audioSession) navigator.audioSession.type = 'playback';
+    } catch {
+        // 非対応なら何もしない
+    }
+
+    // 音を出す直前に、止まっている AudioContext を動かしてから実行する
+    function whenRunning(audio, fn) {
+        if (audio.state === 'running') {
+            fn();
+            return;
+        }
+
+        try {
+            const p = audio.resume();
+
+            if (p && p.then) {
+                p.then(() => { if (audio.state === 'running') fn(); }).catch(() => { });
+            } else {
+                fn();
+            }
+        } catch {
+            // 再開できなければ鳴らさない
+        }
+    }
+
     function getContext() {
         if (muted) return null;
 
@@ -142,6 +169,7 @@ const FX = (() => {
 
         if (!audio) return;
 
+        whenRunning(audio, () => {
         const t0 = audio.currentTime + start;
         const osc = audio.createOscillator();
         const amp = audio.createGain();
@@ -160,6 +188,7 @@ const FX = (() => {
         osc.connect(amp).connect(audio.destination);
         osc.start(t0);
         osc.stop(t0 + dur + 0.02);
+        });
     }
 
     // 「パァン」用の短いノイズ
@@ -169,6 +198,7 @@ const FX = (() => {
 
         if (!audio) return;
 
+        whenRunning(audio, () => {
         const t0 = audio.currentTime + start;
         const length = Math.max(1, Math.floor(audio.sampleRate * dur));
         const buffer = audio.createBuffer(1, length, audio.sampleRate);
@@ -191,6 +221,7 @@ const FX = (() => {
 
         source.connect(filter).connect(amp).connect(audio.destination);
         source.start(t0);
+        });
     }
 
     function vibrate(pattern) {
@@ -206,7 +237,23 @@ const FX = (() => {
     return {
         // 最初のタップで音声を使える状態にする（ブラウザの自動再生制限への対応）
         unlock() {
-            getContext();
+            const audio = getContext();
+
+            if (!audio) return false;
+
+            try {
+                // 無音を1回鳴らして、iOS の音声制限を解除する
+                const buffer = audio.createBuffer(1, 1, 22050);
+                const src = audio.createBufferSource();
+
+                src.buffer = buffer;
+                src.connect(audio.destination);
+                src.start(0);
+            } catch {
+                // 失敗しても次の操作でやり直す
+            }
+
+            return audio.state === 'running';
         },
 
         isMuted() {
@@ -285,7 +332,24 @@ const FX = (() => {
     };
 })();
 
-document.addEventListener('pointerdown', () => FX.unlock(), { once: true });
+// iOS/Android は「指を離した」「クリック」でないと音声が解除されないことがあるため、
+// 実際に音が出せる状態になるまで、操作のたびに解除を試す。
+['touchstart', 'touchend', 'pointerup', 'click', 'keydown'].forEach((name) => {
+    const handler = () => {
+        if (FX.unlock()) {
+            ['touchstart', 'touchend', 'pointerup', 'click', 'keydown'].forEach((n) =>
+                document.removeEventListener(n, handler, true)
+            );
+        }
+    };
+
+    document.addEventListener(name, handler, true);
+});
+
+// 画面に戻ってきたときも音声を再開する
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) FX.unlock();
+});
 
 // すべてのボタンに共通のクリック音（専用の音があるボタンは除く）
 document.addEventListener('click', (event) => {
